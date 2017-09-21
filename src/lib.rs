@@ -19,14 +19,60 @@ impl Notifications {
         self.hooks.push(cb)
     }
 }
-impl j::NotificationHandler for Notifications {
-    fn client_registration(&mut self, cli: &j::Client, name: &str, is_reg: bool) {
-        for cb in &self.hooks {
-            if let &CB::client_registration(ref c) = cb {
-                c(cli, name, is_reg)
+
+macro_rules! def_cb {
+    ($name:ident, $($arg:ident: $type:ty),+) => (
+        fn $name(&mut self, $($arg: $type),+) {
+            for cb in &self.hooks {
+                if let &CB::$name(ref c) = cb {
+                    c($($arg),+);
+                }
             }
         }
-    }
+    )
+}
+macro_rules! def_cb_immut {
+    ($name:ident, $($arg:ident: $type:ty),+) => (
+        fn $name(&self, $($arg: $type),+) {
+            for cb in &self.hooks {
+                if let &CB::$name(ref c) = cb {
+                    c($($arg),+);
+                }
+            }
+        }
+    )
+}
+macro_rules! def_cb_ret {
+    ($name:ident, $($arg:ident: $type:ty),+) => (
+        fn $name(&mut self, $($arg: $type),+) -> j::JackControl {
+            for cb in &self.hooks {
+                if let &CB::$name(ref c) = cb {
+                    let ret = c($($arg),+);
+                    if ret == j::JackControl::Quit {
+                        return ret;
+                    }
+                }
+            }
+            return j::JackControl::Continue;
+        }
+    )
+}
+
+impl j::NotificationHandler for Notifications {
+    def_cb_immut!(thread_init, cli: &j::Client);
+    def_cb!(shutdown, cli: j::ClientStatus, s: &str);
+    def_cb!(freewheel, cli: &j::Client, of: bool);
+    def_cb_ret!(buffer_size, cli: &j::Client, f: j::JackFrames);
+    def_cb_ret!(sample_rate, cli: &j::Client, f: j::JackFrames);
+
+    def_cb!(client_registration, cli: &j::Client, s: &str, of: bool);
+    def_cb!(port_registration, cli: &j::Client, id: j::JackPortId, of: bool);
+    def_cb_ret!(port_rename, cli: &j::Client, id: j::JackPortId, s: &str, s2: &str);
+    def_cb!(ports_connected, cli: &j::Client, id: j::JackPortId, id2: j::JackPortId, of: bool);
+
+    def_cb_ret!(graph_reorder, cli: &j::Client);
+    def_cb_ret!(xrun, cli: &j::Client);
+    def_cb!(latency, cli: &j::Client, lat: j::LatencyType);
 }
 
 use jack::prelude as j;
@@ -114,7 +160,7 @@ impl Client {
     }
 
     pub fn hook(&mut self, cb: CB) {
-        self.hooks.push(cb)
+        self.notifications_handler.as_mut().unwrap().hook(cb);
     }
 }
 

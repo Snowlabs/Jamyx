@@ -6,6 +6,7 @@ extern crate sloggers;
 extern crate jam;
 
 use std::io;
+use std::sync::{Arc};
 
 use jack::prelude as j;
 use sloggers::Build;
@@ -28,12 +29,15 @@ fn main() {
     let mut jclient = jam::Client::new("Jacon", log.new(o!()));
     jclient.init(None);
 
-    let cblog = log.new(o!());
-    let cb: Box<Fn(&j::Client, &str, bool)+Send> = Box::new(move |c: &j::Client, cn: &str, of: bool| {
-        info!(cblog, "Client {}registered: {}", if of {""} else {"un"}, cn)
-    });
+    let sublog = Arc::new(log.new(o!()));
 
-    jclient.notifications_handler.as_mut().unwrap().hook(jam::CB::client_registration(cb));
+    let cblog = sublog.clone();
+    jclient.hook(jam::CB::client_registration(
+        Box::new(move |c: &j::Client, cn: &str, of: bool| {
+            info!(cblog, "Client {}registered: {}", if of {""} else {"un"}, cn)
+        })
+    ));
+
 
     jclient.activate();
 
@@ -42,4 +46,13 @@ fn main() {
 
     jclient.deactivate();
     info!(log, "Jclient deactivate");
+}
+
+
+fn setup_Jacon(logger: slog::Logger, jclient: &mut jam::Client) {
+    jclient.hook(jam::CB::client_registration(
+        Box::new(move |c: &j::Client, cn: &str, of: bool| {
+            info!(logger, "Client {}registered: {}", if of {""} else {"un"}, cn)
+        })
+    ));
 }
