@@ -153,6 +153,7 @@ pub trait JackClientUtils {
     fn connect_ports_by_name_if(&self, &bool, &str, &str) -> Result<(), j::JackErr>;
     fn port_name_by_id(&self, j::JackPortId) -> Option<String>;
 }
+
 impl JackClientUtils for j::Client {
     fn connect_ports_by_name_if(&self, connecting: &bool, iname: &str, oname: &str) -> Result<(), j::JackErr>{
         if *connecting {
