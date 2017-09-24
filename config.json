@@ -1,0 +1,20 @@
+{
+    "connections": {
+        "system:capture_1": ["jamyxer:Mic L", "jamyxer:Mic R"],
+
+        "python2:out_jackaudiosink0_1": ["jamyxer:MPD L"],
+        "python2:out_jackaudiosink0_2": ["jamyxer:MPD R"],
+
+        "PulseAudio JACK Sink:front-left": ["jamyxer:PulseSink L"],
+        "PulseAudio JACK Sink:front-right": ["jamyxer:PulseSink R"],
+
+        "jamyxer:PUBLIC L": ["PulseAudio JACK Source:front-left"],
+        "jamyxer:PUBLIC R": ["PulseAudio JACK Source:front-right"],
+
+        "jamyxer:MPD Out L": ["jamyxer:PrivMPD L", "jamyxer:PubMPD L"],
+        "jamyxer:MPD Out R": ["jamyxer:PrivMPD R", "jamyxer:PubMPD R"],
+
+        "jamyxer:MONITOR L": ["system:playback_1"],
+        "jamyxer:MONITOR R": ["system:playback_2"]
+    }
+}
