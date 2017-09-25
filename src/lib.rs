@@ -4,7 +4,9 @@ extern crate slog;
 extern crate sloggers;
 
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicBool;
 use std::mem;
+use std::thread;
 
 #[derive(Debug)]
 pub enum JamyxErr {
@@ -31,38 +33,30 @@ impl<T: std::fmt::Debug + JerrDerive > From<T> for JamyxErr {
 }
 
 
-pub struct Notifications {
-    log: slog::Logger,
-    hooks: Vec<CB>,
-}
-unsafe impl Send for Notifications { }
-impl Notifications {
-    pub fn new(log: slog::Logger) -> Notifications {
-        Notifications {
-            log,
-            hooks: Vec::new(),
-        }
-    }
-    pub fn hook(&mut self, cb: CB) {
-        self.hooks.push(cb)
-    }
-}
-
 macro_rules! def_cb {
+    ($name:ident) => (
+        fn $name(&mut self) {
+            for cb in &*self.hooks.lock().unwrap() {
+                if let &CB::$name(ref c) = cb {
+                    c();
+                }
+            }
+        }
+    );
     ($name:ident, $($arg:ident: $type:ty),+) => (
         fn $name(&mut self, $($arg: $type),+) {
-            for cb in &self.hooks {
+            for cb in &*self.hooks.lock().unwrap() {
                 if let &CB::$name(ref c) = cb {
                     c($($arg),+);
                 }
             }
         }
-    )
+    );
 }
 macro_rules! def_cb_immut {
     ($name:ident, $($arg:ident: $type:ty),+) => (
         fn $name(&self, $($arg: $type),+) {
-            for cb in &self.hooks {
+            for cb in &*self.hooks.lock().unwrap() {
                 if let &CB::$name(ref c) = cb {
                     c($($arg),+);
                 }
@@ -73,7 +67,7 @@ macro_rules! def_cb_immut {
 macro_rules! def_cb_ret {
     ($name:ident, $($arg:ident: $type:ty),+) => (
         fn $name(&mut self, $($arg: $type),+) -> j::JackControl {
-            for cb in &self.hooks {
+            for cb in &*self.hooks.lock().unwrap() {
                 if let &CB::$name(ref c) = cb {
                     let ret = c($($arg),+);
                     if ret == j::JackControl::Quit {
@@ -85,6 +79,26 @@ macro_rules! def_cb_ret {
         }
     )
 }
+
+pub struct Notifications {
+    log: slog::Logger,
+    hooks: Arc<Mutex<Vec<CB>>>,
+}
+unsafe impl Send for Notifications { }
+impl Notifications {
+    pub fn new(log: slog::Logger, hooks: Arc<Mutex<Vec<CB>>>) -> Notifications {
+        Notifications {
+            log,
+            hooks,
+        }
+    }
+    pub fn hook(&mut self, cb: CB) {
+        self.hooks.lock().unwrap().push(cb)
+    }
+
+    // def_cb!(client_reconnect);
+}
+
 
 impl j::NotificationHandler for Notifications {
     def_cb_immut!(thread_init, cli: &j::Client);
@@ -186,6 +200,8 @@ pub enum CB {
     graph_reorder(Box<Fn(&j::Client) -> j::JackControl+Send>),
     xrun(Box<Fn(&j::Client) -> j::JackControl+Send>),
     latency(Box<Fn(&j::Client, j::LatencyType)+Send>),
+
+    client_reconnection(Box<Fn()+Send>),
 }
 
 
@@ -193,19 +209,22 @@ pub struct Client {
     pub jclient: Arc<Mutex<AnyClient>>,
     name: String,
     logger: slog::Logger,
-    hooks: Vec<CB>,
-    pub notifications_handler: Option<Notifications>,
+    pub notifications_handler: Arc<Mutex<Option<Notifications>>>,
+    do_recon: Arc<Mutex<bool>>,
+    hooks: Arc<Mutex<Vec<CB>>>,
 }
 
 impl Client {
     pub fn new(name: &str, logger: slog::Logger) -> Client {
         let not_logger = logger.new(o!());
+        let hooks = Arc::new(Mutex::new(Vec::new()));
         Client {
             jclient: Arc::new(Mutex::new(AnyClient::None)),
             name: name.to_string(),
             logger,
-            hooks: Vec::new(),
-            notifications_handler: Some(Notifications::new(not_logger)),
+            notifications_handler: Arc::new(Mutex::new(Some(Notifications::new(not_logger, hooks.clone())))),
+            do_recon: Arc::new(Mutex::new(false)),
+            hooks: hooks.clone(),
         }
     }
 
@@ -217,6 +236,21 @@ impl Client {
         let mut jcli = self.jclient.lock()?;
         *jcli = AnyClient::Inactive(client);
 
+        let logger = self.logger.clone();
+        let do_recon = self.do_recon.clone();
+        let jcli = self.jclient.clone();
+        let not_han = self.notifications_handler.clone();
+        let hooks = self.hooks.clone();
+        self.notifications_handler.lock().unwrap().as_mut().unwrap().hook(CB::shutdown(Box::new(move |cs, s| {
+            warn!(logger, "Server shutdown! code: {:?}, reason: {}", cs, s);
+            *do_recon.lock().unwrap() = true;
+
+            let mut old_cli = mem::replace(&mut *jcli.lock().unwrap(), AnyClient::None).to_active().unwrap();
+            unsafe { mem::forget(old_cli); }
+            // Still "recover" the notifications_handler
+            *not_han.lock().unwrap() = Some(Notifications::new(logger.clone(), hooks.clone()));
+        })));
+
         Ok(())
     }
 
@@ -227,7 +261,7 @@ impl Client {
         match &*jcli {
             &AnyClient::Inactive(_) => {
                 let inactive_client = mem::replace(&mut *jcli, AnyClient::None).to_inactive()?;
-                let not_han = mem::replace(&mut self.notifications_handler, None);
+                let not_han = mem::replace(&mut *self.notifications_handler.lock()?, None);
 
                 *jcli = AnyClient::Active(j::AsyncClient::new(inactive_client, not_han.unwrap(), ())?);
                 Ok(())
@@ -235,6 +269,46 @@ impl Client {
             &AnyClient::Active(_) => Err(JamyxErr::ActivateError("Cannot activate already activated client!".to_string())),
             &AnyClient::None => Err(JamyxErr::ActivateError("Cannot activate non-initialized client!".to_string()))
         }
+    }
+
+    pub fn start_reconnection_loop(&mut self) -> Result<(), JamyxErr> {
+        *self.do_recon.lock().unwrap() = false;
+
+        let do_recon = self.do_recon.clone();
+        let jcli = self.jclient.clone();
+        let logger = self.logger.clone();
+        let not_han = self.notifications_handler.clone();
+        let hooks = self.hooks.clone();
+        thread::spawn(move || {
+            loop {
+                while *do_recon.lock().unwrap() {
+                    debug!(logger, "===== Attempting reconnection... =====");
+                    let c_res = j::Client::new("RESURRECT", (j::client_options::NO_START_SERVER));
+                    debug!(logger, "===== ... =====");
+                    match c_res {
+                        Ok((client, _stat)) => {
+                            // let (client, _stat) = j::Client::new("RESURRECT", (j::client_options::NO_START_SERVER)).unwrap();
+                            debug!(logger, "STATUS OF TRY: `{:?}`", _stat);
+                            let mut jcli = jcli.lock().unwrap();
+                            let not_han = mem::replace(&mut *not_han.lock().unwrap(), None);
+                            *jcli = AnyClient::Active(j::AsyncClient::new(client, not_han.unwrap(), ()).unwrap());
+
+                            *do_recon.lock().unwrap() = false;
+                            for h in &*hooks.lock().unwrap() {
+                                if let &CB::client_reconnection(ref cb) = h { cb(); }
+                            }
+                        }
+                        Err(e) => {
+                            warn!(logger, "Failed to open client because of error: {:?}", e);
+                            thread::sleep(std::time::Duration::from_millis(2000));
+                        }
+                    }
+
+                }
+                thread::sleep(std::time::Duration::from_millis(1000))
+            }
+        });
+        Ok(())
     }
 
     pub fn deactivate(&mut self) -> Result<(), JamyxErr>{
@@ -247,16 +321,16 @@ impl Client {
 
                 let (_jcli, not_han, proc_han) = active_client.deactivate()?;
                 *jcli = AnyClient::Inactive(_jcli);
-                self.notifications_handler = Some(not_han);
+                *self.notifications_handler.lock().unwrap() = Some(not_han);
                 Ok(())
             }
-            &AnyClient::Inactive(_) => Err(JamyxErr::DeactivateError("Cannot activate already activated client!".to_string())),
-            &AnyClient::None => Err(JamyxErr::DeactivateError("Cannot activate non-initialized client!".to_string()))
+            &AnyClient::Inactive(_) => Err(JamyxErr::DeactivateError("Cannot deactivate already inactive client!".to_string())),
+            &AnyClient::None => Err(JamyxErr::DeactivateError("Cannot deactivate non-initialized client!".to_string()))
         }
     }
 
     pub fn hook(&mut self, cb: CB) {
-        self.notifications_handler.as_mut().unwrap().hook(cb);
+        self.notifications_handler.lock().unwrap().as_mut().unwrap().hook(cb);
     }
 
 }

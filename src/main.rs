@@ -90,6 +90,7 @@ fn main() {
 
     // Activate JClient
     jclient.activate().unwrap();
+    jclient.start_reconnection_loop();
 
     let mut user_input = String::new();
     io::stdin().read_line(&mut user_input).ok();
@@ -117,30 +118,40 @@ fn get_config(_: slog::Logger) -> Config {
     return config;
 }
 
+#[derive(Debug)]
 enum JaconSignals {
     CheckConection(String, String, bool),
     SetConnectionCheck(bool),
     DisconnectAll,
     ReconnectGood,
-    RetryConnection(String, String, bool, u64),
+
+    RetryIn(u64, Box<JaconSignals>),
+    TryConnection(bool, String, String),
+
+    ReconnectPort(String),
 }
 
 macro_rules! as_inactive {
-    ($cli:ident) => {
-        let $cli = $cli.lock().unwrap();
-        let $cli = $cli.as_inactive().unwrap();
+    ($cli:ident, $log:ident, $if:block) => {
+        if let Ok($cli) = $cli.lock().log_err(&$log) {
+            if let Ok($cli) = $cli.as_inactive().log_err(&$log) $if
+            else { error!($log, "Cannot do anything :("); }
+        } else { error!($log, "Cannot do anything :("); }
     }
 }
 
 trait RetryConnection {
-    fn retry_if_fail_in(&self, bool, String, String, &Sender<JaconSignals>, u64);
+    fn retry_if_fail_in(&self, u64, JaconSignals, &Sender<JaconSignals>);
 }
 
 impl RetryConnection for Result<(), j::JackErr> {
-    fn retry_if_fail_in(&self, of: bool, a: String, b: String, tSig: &Sender<JaconSignals>, delay: u64) {
+    fn retry_if_fail_in(&self, delay: u64, sig: JaconSignals, tSig: &Sender<JaconSignals>) {
         if let &Err(ref e) = self { match e {
-                &j::JackErr::PortConnectionError(_,_) | &j::JackErr::PortDisconnectionError => {
-                    tSig.send(JaconSignals::RetryConnection(a, b, of, delay));
+                &j::JackErr::PortConnectionError(_,_) => {
+                    tSig.send(JaconSignals::RetryIn(delay, Box::new(sig)));
+                }
+                &j::JackErr::PortDisconnectionError => {
+                    // tSig.send(JaconSignals::RetryIn(delay, Box::new(sig)));
                 }, _ => ()
         } }
     }
@@ -160,67 +171,92 @@ fn setup_jacon(log: slog::Logger, jclient: &mut jam::Client, config: &Config) {
         loop {
             let sig = rSig.recv().unwrap();
             match sig {
-                JaconSignals::SetConnectionCheck(of) => { disable_check_connections = !of },
-                JaconSignals::RetryConnection(iname, oname, connecting, delay) => {
-                    warn!(logger, "{}connection Failed and got rescheduled: `{}` and `{}`",
-                           if connecting {""} else {"dis"}, iname, oname);
-                    debug!(logger, "retrying in {} milliseconds...", delay);
-
-                    let cli = cli.clone();
-                    let logger = logger.clone();
+                JaconSignals::ReconnectPort(port_name) => {
+                    info!(logger, "Reevaluating connections for port: `{}`",
+                          port_name);
+                    as_inactive!(cli, logger, {
+                        let port = cli.port_by_name(&port_name).unwrap();
+                        let is_input = port.flags().contains(j::port_flags::IS_INPUT);
+                        port.disconnect().unwrap();
+                        for (oo, iis) in &cons { for ii in iis {
+                            if (is_input && ii == &port_name) || (!is_input && oo == &port_name) {
+                                tSig.send(JaconSignals::TryConnection(true, oo.clone(), ii.clone()));
+                            }
+                        } }
+                    });
+                }
+                JaconSignals::RetryIn(delay, sig) => {
+                    warn!(logger, "{:?} failed and got rescheduled", *sig);
+                    debug!(logger, "scheduling retry in {} milliseconds...", delay);
                     let tSig = tSig.clone();
                     thread::spawn(move || {
                         thread::sleep(std::time::Duration::from_millis(delay));
-                        as_inactive!(cli);
-                        cli
-                            .connect_ports_by_name_if(&connecting, &iname, &oname)
-                            .log_err(&logger)
-                            .map_err(|e| { warn!(logger, "FAILED again! Rescheduling!"); e })
-                            .retry_if_fail_in(connecting, iname, oname, &tSig, 100);
+                        tSig.send(*sig);
                     });
-                },
-                JaconSignals::CheckConection(iname, oname, connected) => {
+                }
+                JaconSignals::TryConnection(of, oname, iname) => {
+                    debug!(logger, "Trying {}connection: `{}` and `{}`",
+                           if of {""} else {"dis"}, oname, iname);
+                    as_inactive!(cli, logger, {
+                        if cli.ports(Some(&iname), None, j::port_flags::IS_INPUT).len() == 1 &&
+                            cli.ports(Some(&oname), None, j::port_flags::IS_OUTPUT).len() == 1 {
+                            cli
+                                .connect_ports_by_name_if(&of, &oname, &iname)
+                                .log_err(&logger)
+                                .map_err(|e| { warn!(logger, "FAILED! Rescheduling!"); e })
+                                .retry_if_fail_in(100, JaconSignals::TryConnection(of, oname, iname), &tSig);
+                        } else {
+                            debug!(logger, "One or both of ports: `{}` and `{}` does not exist!", oname, iname);
+                        }
+
+                    });
+
+                }
+                JaconSignals::SetConnectionCheck(of) => { disable_check_connections = !of },
+                JaconSignals::CheckConection(oname, iname, connected) => {
                     if disable_check_connections {
                         debug!(logger, "Skipping connection checks");
                     } else {
                         let mut is_fine = !connected;
-                        for (ii, oos) in &cons {
-                            if &iname == ii && oos.contains(&oname) {
+                        for (oo, iis) in &cons {
+                            if &oname == oo && iis.contains(&iname) {
                                 is_fine = connected;
                                 break;
                             }
                         }
 
-                        let logger = logger.new(o!("stat" => if is_fine {"GOOD"} else {"BAD"}));
-                        info!(logger, "Ports {}connected: `{}` and `{}`", if connected {""} else {"dis"}, iname, oname);
-                        debug!(logger, "{}: ", if is_fine {"GOOD"} else {"BAD"});
+                        let stat = if is_fine {"GOOD"} else {"BAD"};
+                        let logger = logger.new(o!("stat" => stat));
+                        info!(logger, "Ports {}connected: `{}` and `{}`", if connected {""} else {"dis"}, oname, iname);
+                        debug!(logger, "{}: ", stat);
                         if !is_fine {
                             let connecting = !connected;
-                            as_inactive!(cli);
-                            debug!(logger, "{}connecting ports `{}` and `{}`", if connecting {""} else {"dis"}, iname, oname);
-                            cli
-                                .connect_ports_by_name_if(&connecting, &iname, &oname)
-                                .log_err(&logger)
-                                .map_err(|e| { warn!(logger, "FAILED! Rescheduling!"); e })
-                                .retry_if_fail_in(connecting, iname, oname, &tSig, 100);
-
+                            debug!(logger, "Scheduling try {}connection: `{}` and `{}`",
+                                   if connecting {""} else {"dis"}, oname, iname);
+                            as_inactive!(cli, logger, {
+                                tSig.send(JaconSignals::TryConnection(connecting, oname, iname));
+                            });
                         } else {
                             debug!(logger, "Doing nothing");
                         }
                     }
                 }
                 JaconSignals::ReconnectGood => {
-                    as_inactive!(cli);
-                    for (ii, oos) in &cons { for oo in oos {
-                            cli.connect_ports_by_name(&ii, &oo);
-                    } }
+                    info!(logger, "Reconnecting all good");
+                    as_inactive!(cli, logger, {
+                        for (oo, iis) in &cons { for ii in iis {
+                                cli.connect_ports_by_name(&oo, &ii);
+                        } }
+                    });
                 }
                 JaconSignals::DisconnectAll => {
+                    info!(logger, "Disconnecting all");
                     tSig.send(JaconSignals::SetConnectionCheck(false));
-                    as_inactive!(cli);
-                    for ii in cli.ports(None, None, j::port_flags::IS_INPUT) {
-                        cli.port_by_name(&ii).unwrap().disconnect();
-                    }
+                    as_inactive!(cli, logger, {
+                        for ii in cli.ports(None, None, j::port_flags::IS_INPUT) {
+                            cli.port_by_name(&ii).unwrap().disconnect();
+                        }
+                    });
                     tSig.send(JaconSignals::SetConnectionCheck(true));
                 }
             }
@@ -229,11 +265,29 @@ fn setup_jacon(log: slog::Logger, jclient: &mut jam::Client, config: &Config) {
 
     let tSig = _tSig.clone();
     jclient.hook(jam::CB::ports_connected(
-        Box::new(move |c, i, o, connected| {
-            let iname = c.port_name_by_id(i).unwrap(); // in
+        Box::new(move |c, o, i, connected| {
             let oname = c.port_name_by_id(o).unwrap(); // out
+            let iname = c.port_name_by_id(i).unwrap(); // in
 
-            tSig.send(JaconSignals::CheckConection(iname, oname, connected));
+            tSig.send(JaconSignals::CheckConection(oname, iname, connected));
+        })
+    ));
+    let tSig = _tSig.clone();
+    let logger = log.clone();
+    jclient.hook(jam::CB::port_registration(
+        Box::new(move |c, p, of| {
+            let pname = c.port_name_by_id(p).unwrap();
+            info!(logger, "Port {}registered: `{}`", if of {""} else {"un"}, pname);
+            if of {
+                tSig.send(JaconSignals::ReconnectPort(pname));
+            }
+        })
+    ));
+    let tSig = _tSig.clone();
+    jclient.hook(jam::CB::client_reconnection(
+        Box::new(move || {
+            tSig.send(JaconSignals::DisconnectAll);
+            tSig.send(JaconSignals::ReconnectGood);
         })
     ));
     let tSig = _tSig.clone();
