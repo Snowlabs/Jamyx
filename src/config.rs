@@ -12,17 +12,22 @@ pub struct Config {
     pub connections: HashMap<String, Vec<String>>
 }
 
-pub fn parse(path: &str, _: slog::Logger) -> Config {
+pub fn parse(path: &str, logger: slog::Logger) -> Config {
     let path = std::path::Path::new(path);
+    info!(logger, "Parsing config file at path: {:?}", path);
 
     let mut file = match std::fs::File::open(&path) {
-        Err(why) => panic!("couldn't open {}: {}", path.display(), why.description()),
+        Err(why) => {
+            crit!(logger, "couldn't open {}: {}", path.display(), why.description());
+            panic!();
+        },
         Ok(file) => file,
     };
 
     let mut s = String::new();
     if let Err(why) = file.read_to_string(&mut s) {
-        panic!("couldn't read {}: {}", path.display(), why.description());
+        crit!(logger, "couldn't read {}: {}", path.display(), why.description());
+        panic!();
     }
 
     let config: Config = serde_json::from_str(&s).unwrap();

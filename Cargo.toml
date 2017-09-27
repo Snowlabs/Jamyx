@@ -4,7 +4,10 @@ version = "0.1.0"
 authors = ["Javier Pollak <javi.po.123@gmail.com>"]
 
 [dependencies]
-jack = { git = "https://github.com/Javyre/rust-jack.git" }
+
+clap = "2.26.2"
+jack = { git = "https://github.com/rustaudio/rust-jack.git" }
+# jack = { git = "https://github.com/Javyre/rust-jack.git" }
 # jack = { path = "../Rust-jack" }
 slog = "2.0.12"
 slog-term = "2.2.0"
