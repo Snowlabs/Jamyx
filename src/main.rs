@@ -13,6 +13,7 @@ extern crate serde_derive;
 extern crate jam;
 
 use std::io;
+use std::sync::{Mutex, Arc};
 
 use slog::Drain;
 
@@ -21,6 +22,7 @@ use clap::{Arg, App, SubCommand};
 mod config;
 mod jacon;
 mod utils;
+mod server;
 
 fn setup_log(verbosity: slog::Level) -> slog::Logger {
     let decorator = slog_term::TermDecorator::new().build();
@@ -58,7 +60,7 @@ fn main() {
 
 
     // Parse config
-    let config = config::parse(cargs.value_of("config").unwrap_or("config.json"), log.new(o!()));
+    let config = Arc::new(Mutex::new(config::parse(cargs.value_of("config").unwrap_or("config.json"), log.new(o!()))));
 
     // Init JClient
     let mut jclient = jam::Client::new("Jacon", log.new(o!()));
@@ -73,7 +75,9 @@ fn main() {
     ));
 
     // setup jacon
-    let jacon_sender = jacon::setup(log.new(o!()), &mut jclient, &config);
+    // let jacon_sender = jacon::setup(log.new(o!()), &mut jclient, &config);
+    let mut jacon = jacon::ConnectionKit::new(log.clone(), jclient.jclient.clone(), config.clone());
+    jacon.init(&mut jclient);
 
     // =========== START ===========
     // Activate JClient
@@ -81,7 +85,13 @@ fn main() {
     jclient.activate().unwrap();
     jclient.start_reconnection_loop().unwrap();
 
-    jacon::start(jacon_sender);
+    // jacon::start(log.clone(), jacon_sender.clone());
+    jacon.start();
+    let sender = server::CmdSender::new(
+        jacon.t_cmd.as_ref().unwrap().clone(),
+        jacon.t_cmd.as_ref().unwrap().clone(),
+        jacon.t_cmd.as_ref().unwrap().clone());
+    server::start(log.clone(), sender);
 
     let mut user_input = String::new();
     io::stdin().read_line(&mut user_input).ok();

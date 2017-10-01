@@ -5,11 +5,12 @@ extern crate slog;
 use std;
 use std::error::Error;
 use std::io::Read;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
-    pub connections: HashMap<String, Vec<String>>
+    pub connections: HashMap<String, HashSet<String>>
 }
 
 pub fn parse(path: &str, logger: slog::Logger) -> Config {
