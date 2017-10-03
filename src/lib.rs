@@ -117,9 +117,24 @@ impl j::NotificationHandler for Notifications {
     def_cb!(latency, cli: &j::Client, lat: j::LatencyType);
 }
 
+pub struct Process {
+    log: slog::Logger,
+    hooks: Arc<Mutex<Vec<CB>>>,
+}
+
+impl Process {
+    pub fn new(log: slog::Logger, hooks: Arc<Mutex<Vec<CB>>>) -> Self {
+        Self { log, hooks, }
+    }
+}
+
+impl j::ProcessHandler for Process {
+    def_cb_ret!(process, cli: &j::Client, process_scope: &j::ProcessScope);
+}
+
 use jack::prelude as j;
 
-type A = j::AsyncClient<Notifications, ()>;
+type A = j::AsyncClient<Notifications, Process>;
 
 pub enum AnyClient {
     None,
@@ -202,6 +217,7 @@ pub enum CB {
     latency(Box<Fn(&j::Client, j::LatencyType)+Send>),
 
     client_reconnection(Box<Fn()+Send>),
+    process(Box<Fn(&j::Client, &j::ProcessScope) -> j::JackControl+Send>),
 }
 
 
@@ -210,6 +226,7 @@ pub struct Client {
     name: String,
     logger: slog::Logger,
     pub notifications_handler: Arc<Mutex<Option<Notifications>>>,
+    pub process_handler: Arc<Mutex<Option<Process>>>,
     do_recon: Arc<Mutex<bool>>,
     hooks: Arc<Mutex<Vec<CB>>>,
 }
@@ -217,12 +234,14 @@ pub struct Client {
 impl Client {
     pub fn new(name: &str, logger: slog::Logger) -> Client {
         let not_logger = logger.new(o!());
+        let proc_logger = logger.new(o!());
         let hooks = Arc::new(Mutex::new(Vec::new()));
         Client {
             jclient: Arc::new(Mutex::new(AnyClient::None)),
             name: name.to_string(),
             logger,
             notifications_handler: Arc::new(Mutex::new(Some(Notifications::new(not_logger, hooks.clone())))),
+            process_handler: Arc::new(Mutex::new(Some(Process::new(proc_logger, hooks.clone())))),
             do_recon: Arc::new(Mutex::new(false)),
             hooks: hooks.clone(),
         }
@@ -240,6 +259,7 @@ impl Client {
         let do_recon = self.do_recon.clone();
         let jcli = self.jclient.clone();
         let not_han = self.notifications_handler.clone();
+        let proc_han = self.process_handler.clone();
         let hooks = self.hooks.clone();
         self.notifications_handler.lock().unwrap().as_mut().unwrap().hook(CB::shutdown(Box::new(move |cs, s| {
             warn!(logger, "Server shutdown! code: {:?}, reason: {}", cs, s);
@@ -248,7 +268,9 @@ impl Client {
             let mut old_cli = mem::replace(&mut *jcli.lock().unwrap(), AnyClient::None).to_active().unwrap();
             unsafe { mem::forget(old_cli); }
             // Still "recover" the notifications_handler
+            // TODO: actually give the proper loggers to the new handlers here
             *not_han.lock().unwrap() = Some(Notifications::new(logger.clone(), hooks.clone()));
+            *proc_han.lock().unwrap() = Some(Process::new(logger.clone(), hooks.clone()));
         })));
 
         Ok(())
@@ -262,8 +284,9 @@ impl Client {
             &AnyClient::Inactive(_) => {
                 let inactive_client = mem::replace(&mut *jcli, AnyClient::None).to_inactive()?;
                 let not_han = mem::replace(&mut *self.notifications_handler.lock()?, None);
+                let proc_han = mem::replace(&mut *self.process_handler.lock()?, None);
 
-                *jcli = AnyClient::Active(j::AsyncClient::new(inactive_client, not_han.unwrap(), ())?);
+                *jcli = AnyClient::Active(j::AsyncClient::new(inactive_client, not_han.unwrap(), proc_han.unwrap())?);
                 Ok(())
             }
             &AnyClient::Active(_) => Err(JamyxErr::ActivateError("Cannot activate already activated client!".to_string())),
@@ -278,6 +301,7 @@ impl Client {
         let jcli = self.jclient.clone();
         let logger = self.logger.clone();
         let not_han = self.notifications_handler.clone();
+        let proc_han = self.process_handler.clone();
         let hooks = self.hooks.clone();
         thread::spawn(move || {
             loop {
@@ -291,7 +315,8 @@ impl Client {
                             debug!(logger, "STATUS OF TRY: `{:?}`", _stat);
                             let mut jcli = jcli.lock().unwrap();
                             let not_han = mem::replace(&mut *not_han.lock().unwrap(), None);
-                            *jcli = AnyClient::Active(j::AsyncClient::new(client, not_han.unwrap(), ()).unwrap());
+                            let proc_han = mem::replace(&mut *proc_han.lock().unwrap(), None);
+                            *jcli = AnyClient::Active(j::AsyncClient::new(client, not_han.unwrap(), proc_han.unwrap()).unwrap());
 
                             *do_recon.lock().unwrap() = false;
                             for h in &*hooks.lock().unwrap() {
