@@ -23,25 +23,25 @@ type AMAnyClient = AM<jam::AnyClient>;
 type AMConfig = AM<config::Config>;
 
 
-pub struct Port<S: j::PortSpec> {
+pub struct Port {
     is_mono: bool,
-    ports: HashMap<String, j::Port<S>>,
+    ports: HashMap<String, j::Port<jam::AnySpec>>,
 }
-impl Port<j::AudioOutSpec> {
-    pub fn register_output(name: &str, mono: bool, cli: &jam::AnyClient) -> Self {
+
+impl Port {
+    pub fn register(name: &str, output: bool, mono: bool, cli: &jam::AnyClient) -> Self {
         let mut ports = HashMap::new();
-        // let output = spec.jack_flags() == j::port_flags::IS_OUTPUT;
-        // let spec = if output { Box::new(j::AudioOutSpec) } else { Box::new(j::AudioInSpec) };
+        let spec = if output { jam::AnySpec::AudioOut } else { jam::AnySpec::AudioIn };
 
         if mono {
-            let pn = format!("{} {} Out", name, "M");
-            let port = cli.as_inactive().unwrap().register_port(&pn, j::AudioOutSpec).unwrap();
+            let pn = format!("{} {}{}", name, "M", if output { " Out" } else {""});
+            let port = cli.as_inactive().unwrap().register_port(&pn, spec).unwrap();
             ports.insert("M".to_string(), port);
         } else {
-            let pnl = format!("{} {} Out", name, "L");
-            let pnr = format!("{} {} Out", name, "R");
-            let portl = cli.as_inactive().unwrap().register_port(&pnl, j::AudioOutSpec).unwrap();
-            let portr = cli.as_inactive().unwrap().register_port(&pnr, j::AudioOutSpec).unwrap();
+            let pnl = format!("{} {}{}", name, "L", if output { " Out" } else {""});
+            let pnr = format!("{} {}{}", name, "R", if output { " Out" } else {""});
+            let portl = cli.as_inactive().unwrap().register_port(&pnl, spec).unwrap();
+            let portr = cli.as_inactive().unwrap().register_port(&pnr, spec).unwrap();
             ports.insert("L".to_string(), portl);
             ports.insert("R".to_string(), portr);
         }
@@ -52,27 +52,6 @@ impl Port<j::AudioOutSpec> {
     }
 }
 
-impl Port<j::AudioInSpec> {
-    pub fn register_input(name: &str, mono: bool, cli: &jam::AnyClient) -> Self {
-        let mut ports = HashMap::new();
-        if mono {
-            let pn = format!("{} {}", name, "M");
-            let port = cli.as_inactive().unwrap().register_port(&pn, j::AudioInSpec).unwrap();
-            ports.insert("M".to_string(), port);
-        } else {
-            let pnl = format!("{} {}", name, "L");
-            let pnr = format!("{} {}", name, "R");
-            let portl = cli.as_inactive().unwrap().register_port(&pnl, j::AudioInSpec).unwrap();
-            let portr = cli.as_inactive().unwrap().register_port(&pnr, j::AudioInSpec).unwrap();
-            ports.insert("L".to_string(), portl);
-            ports.insert("R".to_string(), portr);
-        }
-        Self {
-            is_mono: mono,
-            ports,
-        }
-    }
-}
 
 pub struct Patchbay {
     log: slog::Logger,

@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Javier Pollak <javi.po.123@gmail.com>"]
 
 [dependencies]
-
+libc = "0.2"
 clap = "2.26.2"
 jack = { git = "https://github.com/rustaudio/rust-jack.git" }
 # jack = { git = "https://github.com/Javyre/rust-jack.git" }
