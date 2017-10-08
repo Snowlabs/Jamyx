@@ -21,6 +21,7 @@ use clap::{Arg, App, SubCommand};
 
 mod config;
 mod jacon;
+mod jamyxer;
 mod utils;
 mod server;
 
@@ -75,9 +76,12 @@ fn main() {
     ));
 
     // setup jacon
-    // let jacon_sender = jacon::setup(log.new(o!()), &mut jclient, &config);
     let mut jacon = jacon::ConnectionKit::new(log.clone(), jclient.jclient.clone(), config.clone());
     jacon.init(&mut jclient);
+
+    // setup jamyxer
+    let mut jamyxer = jamyxer::Patchbay::new(log.clone(), jclient.jclient.clone(), config.clone());
+    jamyxer.init(&mut jclient);
 
     // =========== START ===========
     // Activate JClient
@@ -85,7 +89,6 @@ fn main() {
     jclient.activate().unwrap();
     jclient.start_reconnection_loop().unwrap();
 
-    // jacon::start(log.clone(), jacon_sender.clone());
     jacon.start();
     let sender = server::CmdSender::new(
         jacon.t_cmd.as_ref().unwrap().clone(),

@@ -5,7 +5,7 @@
         "python2:out_jackaudiosink0_1": ["jamyxer:MPD L"],
         "python2:out_jackaudiosink0_2": ["jamyxer:MPD R"],
 
-        "PulseAudio JACK Sink:front-left": ["jamyxer:PulseSink L"],
+        "PulseAudio JACK Sink:front-left":  ["jamyxer:PulseSink L"],
         "PulseAudio JACK Sink:front-right": ["jamyxer:PulseSink R"],
 
         "jamyxer:PUBLIC L": ["PulseAudio JACK Source:front-left"],
@@ -16,5 +16,30 @@
 
         "jamyxer:MONITOR L": ["system:playback_1"],
         "jamyxer:MONITOR R": ["system:playback_2"]
+    },
+
+    "mixer": {
+        "connections" : {
+            "MASTER":  [ "Mic", "PrivMPD", "PulseSink", "PulseSink2" ],
+            "PRIVATE": [ "PrivMPD", "PulseSink", "PulseSink2" ],
+            "PUBLIC":  [ "Mic" ]
+        },
+        "outputs" : {
+            "MASTER":  { "vol": 100.0 },
+            "PRIVATE": { "vol": 100.0 },
+            "PUBLIC":  { "vol": 100.0 }
+        },
+        "inputs" : {
+            "MPD":        { "vol": 100.0 },
+            "Mic":        { "mono": true, "vol": 90.0 },
+            "PrivMPD":    { "vol": 100.0 },
+            "PubMPD":     { "vol": 100.0 },
+            "PulseSink":  { "vol": 100.0 },
+            "PulseSink2": { "vol": 100.0 }
+        },
+        "monitor" : {
+            "channel":  "PRIVATE",
+            "is_input": false
+        }
     }
 }
