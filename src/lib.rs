@@ -2,6 +2,7 @@ extern crate jack;
 #[macro_use]
 extern crate slog;
 extern crate sloggers;
+extern crate libc;
 
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
@@ -199,6 +200,42 @@ impl JackClientUtils for j::Client {
         }
     }
 }
+
+#[derive(Clone, Copy)]
+pub enum AnySpec {
+    AudioOut,
+    AudioIn,
+}
+
+unsafe impl j::PortSpec for AnySpec {
+    fn jack_port_type(&self) -> &str {
+        match self {
+            &AnySpec::AudioIn => {
+                static ispec: j::AudioInSpec = j::AudioInSpec;
+                ispec.jack_port_type()
+            },
+            &AnySpec::AudioOut => {
+                static ospec: j::AudioOutSpec = j::AudioOutSpec;
+                ospec.jack_port_type()
+            },
+        }
+    }
+
+    fn jack_flags(&self) -> j::PortFlags {
+        match self {
+            &AnySpec::AudioIn => j::AudioInSpec.jack_flags(),
+            &AnySpec::AudioOut => j::AudioOutSpec.jack_flags(),
+        }
+    }
+
+    fn jack_buffer_size(&self) -> libc::c_ulong {
+        match self {
+            &AnySpec::AudioIn => j::AudioInSpec.jack_buffer_size(),
+            &AnySpec::AudioOut => j::AudioOutSpec.jack_buffer_size(),
+        }
+    }
+}
+
 
 pub enum CB {
     thread_init(Box<Fn(&j::Client)+Send>),
