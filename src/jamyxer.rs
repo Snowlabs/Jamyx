@@ -230,6 +230,11 @@ impl Patchbay {
         self.cmd_thread = Some(thread::spawn(move || {
             loop {
                 let (mut stream, command): (TcpStream, server::Command) = r_cmd.recv().unwrap();
+                let get_ptype = |pt: &String| match &**pt {
+                                    "input"|"in"|"i" => false,
+                                    "output"|"out"|"o"|_ => true, // TODO: Handle bad args to server commands
+                                };
+
                 match command.cmd.as_str() {
                     "con" | "dis" | "tog" => {
                         let iname = command.opts[0].clone();
@@ -259,10 +264,58 @@ impl Patchbay {
                         info!(log, "{}", msg);
 
                     }
-                    /*
-
                     "get" => {
+                        let what = command.opts[0].clone();
+                        match &*what {
+                            "volule"|"vol"|"v" => {
+                                let ptype = command.opts[1].clone();
+                                let is_output = get_ptype(&ptype);
+
+                                let p_name = command.opts[2].clone();
+                                let vol = cfg.read().unwrap().mixer.get_vol(is_output, &p_name);
+
+                                let msg;
+                                match vol {
+                                    Ok(v) => { msg = format!("{}", v); },
+                                    Err(_) => { msg = "Error: port not found!".to_string() },
+                                }
+                                // let msg = format!("{:?}", vol);
+
+                                let _ = stream.write(msg.as_bytes());
+                                let _ = stream.write(b"\n");
+                                let _ = stream.flush().log_err(&log);
+                                info!(log, "Vol of {}: `{}`: {}", ptype, p_name, msg);
+                            }
+                            "connections"|"cons"|"con"|"c" => {
+                                let ptype = command.opts[1].clone();
+                                let is_output = get_ptype(&ptype);
+                                let p_name = command.opts[2].clone();
+
+                                let cons = cfg.read().unwrap().mixer.get_connected(is_output, &p_name);
+
+                                let mut msg;
+                                match cons {
+                                    Ok(c) => {
+                                        msg = format!("Currently connected ports for {}: `{}`:",
+                                                      if is_output {"output"} else {"input"}, p_name);
+                                        for p in &c {
+                                            msg = format!("{}\n- {}", msg, p);
+                                        }
+                                    }
+                                    Err(_) => { msg = "Error: port not found!".to_string() },
+                                }
+
+
+                                let _ = stream.write(msg.as_bytes());
+                                let _ = stream.write(b"\n");
+                                let _ = stream.flush().log_err(&log);
+                                info!(log, "{}", msg);
+                            }
+                            _ => {}
+                        }
+
                     }
+                    /*
                     "mon" => {
                     }
                     "mkp" => {

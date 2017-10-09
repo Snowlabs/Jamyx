@@ -64,6 +64,50 @@ pub struct MixerConfig {
     pub monitor: MonitorConfig,
 }
 
+impl MixerConfig {
+    pub fn get_vol(&self, is_output: bool, name: &String) -> Result<f32, ()> {
+        if is_output {
+            match self.outputs.get(name) {
+                Some(o) => Ok(o.get_vol()),
+                None => Err(()),
+            }
+        } else {
+            match self.inputs.get(name) {
+                Some(i) => Ok(i.get_vol()),
+                None => Err(()),
+            }
+        }
+    }
+
+    pub fn port_exists(&self, is_output: bool, name: &String) -> bool {
+        if is_output {
+            self.outputs.contains_key(name)
+        } else {
+            self.inputs.contains_key(name)
+        }
+    }
+
+    pub fn get_connected(&self, is_output: bool, name: &String) -> Result<HashSet<String>, ()> {
+        if !self.port_exists(is_output, name) {
+            return Err(());
+        }
+        if is_output {
+            match self.connections.get(name) {
+                Some(is) => Ok(is.clone()),
+                None => Ok(HashSet::new()),
+            }
+        } else {
+            let mut os = HashSet::new();
+            for (o, is) in &self.connections {
+                if is.contains(name) {
+                    os.insert(o.clone());
+                }
+            }
+            Ok(os)
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub connections: HashMap<String, HashSet<String>>,
