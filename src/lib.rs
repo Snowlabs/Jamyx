@@ -4,6 +4,7 @@ extern crate slog;
 extern crate sloggers;
 extern crate libc;
 
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::AtomicBool;
 use std::mem;
@@ -236,6 +237,65 @@ unsafe impl j::PortSpec for AnySpec {
     }
 }
 
+pub struct AnyAudioOutPort<'a> {
+    _port: &'a mut j::Port<AnySpec>,
+    buffer: &'a mut [f32],
+}
+
+impl<'a> AnyAudioOutPort<'a> {
+    pub fn new(port: &'a mut j::Port<AnySpec>, ps: &'a j::ProcessScope) -> Self {
+        assert_eq!(port.client_ptr(), ps.client_ptr());
+        let buff = unsafe {
+            std::slice::from_raw_parts_mut(port.buffer(ps.n_frames()) as *mut f32,
+                                      ps.n_frames() as usize)
+        };
+        Self {
+            _port: port,
+            buffer: buff,
+        }
+    }
+}
+
+impl<'a> Deref for AnyAudioOutPort<'a> {
+    type Target = [f32];
+
+    fn deref(&self) -> &[f32] {
+        self.buffer
+    }
+}
+
+impl<'a> DerefMut for AnyAudioOutPort<'a> {
+    fn deref_mut(&mut self) -> &mut [f32] {
+        self.buffer
+    }
+}
+
+pub struct AnyAudioInPort<'a> {
+    _port: &'a j::Port<AnySpec>,
+    buffer: &'a [f32],
+}
+
+impl<'a> AnyAudioInPort<'a> {
+    pub fn new(port: &'a j::Port<AnySpec>, ps: &'a j::ProcessScope) -> Self {
+        assert_eq!(port.client_ptr(), ps.client_ptr());
+        let buff = unsafe {
+            std::slice::from_raw_parts(port.buffer(ps.n_frames()) as *const f32,
+                                      ps.n_frames() as usize)
+        };
+        Self {
+            _port: port,
+            buffer: buff,
+        }
+    }
+}
+
+impl<'a> Deref for AnyAudioInPort<'a> {
+    type Target = [f32];
+
+    fn deref(&self) -> &[f32] {
+        self.buffer
+    }
+}
 
 pub enum CB {
     thread_init(Box<Fn(&j::Client)+Send>),

@@ -6,7 +6,7 @@ use std;
 use std::thread;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::net::TcpStream;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::io::Write;
 use std::collections::{HashMap, HashSet};
 
@@ -17,37 +17,9 @@ use config;
 use server;
 
 use utils::LogError;
+use utils::Connections;
 
 
-trait Connections {
-    fn connect(&mut self, bool, &str, &str);
-    fn is_connected(&self, &str, &str) -> bool;
-}
-
-impl Connections for HashMap<String, HashSet<String>> {
-    fn connect(&mut self, of: bool, oname: &str, iname: &str) {
-        if of {
-            self.entry(oname.to_string()).or_insert(HashSet::new()).insert(iname.to_string());
-        } else {
-            // self.get(iname).as_mut().map()
-            let mut erase = false;
-            match self.get_mut(oname) {
-                Some(os) => {
-                    os.remove(iname);
-                    erase = os.is_empty();
-                },
-                None => {},
-            }
-            if erase {
-                self.remove(oname);
-            }
-        }
-    }
-
-    fn is_connected(&self, oname: &str, iname: &str) -> bool {
-        self.contains_key(oname) && self[oname].contains(iname)
-    }
-}
 
 
 #[derive(Debug)]
@@ -93,12 +65,11 @@ impl RetryConnection for Result<(), j::JackErr> {
 
 type AM<T> = Arc<Mutex<T>>;
 type AMAnyClient = AM<jam::AnyClient>;
-type AMConfig = AM<config::Config>;
 
 pub struct ConnectionKit {
     log: slog::Logger,
     cli: AMAnyClient,
-    cfg: AMConfig,
+    cfg: Arc<RwLock<config::Config>>,
     t_sig: Option<Sender<Signals>>,
     pub t_cmd: Option<Sender<(TcpStream, server::Command)>>,
     sig_thread: Option<std::thread::JoinHandle<()>>,
@@ -107,7 +78,7 @@ pub struct ConnectionKit {
 }
 
 impl ConnectionKit {
-    pub fn new(log: slog::Logger, cli: AMAnyClient, cfg: AMConfig) -> Self {
+    pub fn new(log: slog::Logger, cli: AMAnyClient, cfg: Arc<RwLock<config::Config>>) -> Self {
         ConnectionKit {
             log,
             cli,
@@ -171,7 +142,7 @@ impl ConnectionKit {
 
     }
 
-    fn sig_loop(sigs: (Sender<Signals>, Receiver<Signals>), log: slog::Logger, cli: AMAnyClient, config: AMConfig) {
+    fn sig_loop(sigs: (Sender<Signals>, Receiver<Signals>), log: slog::Logger, cli: AMAnyClient, config: Arc<RwLock<config::Config>>) {
         let (t_sig, r_sig) = sigs;
         let mut disable_check_connections = false;
         loop {
@@ -184,7 +155,7 @@ impl ConnectionKit {
                         let port = cli.port_by_name(&port_name).unwrap();
                         let is_input = port.flags().contains(j::port_flags::IS_INPUT);
                         port.disconnect().unwrap();
-                        for (oo, iis) in &config.lock().unwrap().connections { for ii in iis {
+                        for (oo, iis) in &config.read().unwrap().connections { for ii in iis {
                             if (is_input && ii == &port_name) || (!is_input && oo == &port_name) {
                                 t_sig.send(Signals::TryConnection(true, oo.clone(), ii.clone())).unwrap();
                             }
@@ -227,7 +198,7 @@ impl ConnectionKit {
                         debug!(log, "Skipping connection checks");
                     } else {
                         let mut is_fine = !connected;
-                        for (oo, iis) in &config.lock().unwrap().connections {
+                        for (oo, iis) in &config.read().unwrap().connections {
                             if &oname == oo && iis.contains(&iname) {
                                 is_fine = connected;
                                 break;
@@ -250,7 +221,7 @@ impl ConnectionKit {
                 }
                 Signals::ReconnectGood => {
                     info!(log, "Reconnecting all good");
-                    for (oo, iis) in &config.lock().unwrap().connections { for ii in iis {
+                    for (oo, iis) in &config.read().unwrap().connections { for ii in iis {
                             t_sig.send(Signals::TryConnection(true, oo.clone(), ii.clone())).unwrap();
                     } }
                 }
@@ -290,14 +261,14 @@ impl ConnectionKit {
                         let connecting = match command.cmd.as_str() {
                             "con" => true,
                             "dis" => false,
-                            "tog" | _ => !cfg.lock().unwrap().connections.is_connected(&iname, &oname),
+                            "tog" | _ => !cfg.read().unwrap().connections.is_connected(&iname, &oname),
                         };
 
                         let msg = format!("{}connected `{}` and `{}`",
                                           if connecting {""} else {"dis"}, iname, oname);
 
                         // Perform the (dis)connection
-                        cfg.lock().unwrap().connections.connect(connecting, &iname, &oname);
+                        cfg.write().unwrap().connections.connect(connecting, &iname, &oname);
                         t_sig.send(Signals::TryConnection(connecting, iname, oname));
 
                         let _ = stream.write(msg.as_bytes());

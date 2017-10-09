@@ -9,21 +9,36 @@ use std::collections::{HashMap, HashSet};
 
 use utils::LogError;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct PortConfig {
     #[serde(default)]
     pub vol: serde_json::Value,
     #[serde(default)]
     pub mono: serde_json::Value,
+    #[serde(default)]
+    pub balance: serde_json::Value,
 }
 
 impl PortConfig {
-    pub fn get_vol(&self) -> f64 {
+    pub fn get_vol(&self) -> f32 {
         if self.vol.is_null() {
-            100.0
+            100.0 / 100.0
         } else {
-            self.vol.as_f64().unwrap()
+            self.vol.as_f64().unwrap() as f32 / 100.0
         }
+    }
+
+    pub fn get_balance(&self) -> f32 {
+        if self.balance.is_null() {
+            0.0
+        } else {
+            self.balance.as_f64().unwrap() as f32
+        }
+    }
+
+    pub fn get_balance_pair(&self) -> (f32, f32) {
+        let b = self.get_balance();
+        (b+1.0, -b+1.0)
     }
 
     pub fn is_mono(&self) -> bool {
@@ -35,13 +50,13 @@ impl PortConfig {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MonitorConfig {
     pub channel: String,
     pub is_input: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MixerConfig {
     pub connections: HashMap<String, HashSet<String>>,
     pub outputs: HashMap<String, PortConfig>,
@@ -49,7 +64,7 @@ pub struct MixerConfig {
     pub monitor: MonitorConfig,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     pub connections: HashMap<String, HashSet<String>>,
     pub mixer: MixerConfig,

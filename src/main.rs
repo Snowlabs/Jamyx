@@ -13,7 +13,7 @@ extern crate serde_derive;
 extern crate jam;
 
 use std::io;
-use std::sync::{Mutex, Arc};
+use std::sync::{Mutex, Arc, RwLock};
 
 use slog::Drain;
 
@@ -61,7 +61,7 @@ fn main() {
 
 
     // Parse config
-    let config = Arc::new(Mutex::new(config::parse(cargs.value_of("config").unwrap_or("config.json"), log.new(o!()))));
+    let config = Arc::new(RwLock::new(config::parse(cargs.value_of("config").unwrap_or("config.json"), log.new(o!()))));
 
     // Init JClient
     let mut jclient = jam::Client::new("Jacon", log.new(o!()));
@@ -86,16 +86,24 @@ fn main() {
     // =========== START ===========
     // Activate JClient
     // This activates the client and activates all the callbacks that were set
+    debug!(log, "Starting jclient...");
     jclient.activate().unwrap();
     jclient.start_reconnection_loop().unwrap();
 
+    debug!(log, "Starting Jacon...");
     jacon.start();
+
+    debug!(log, "Starting Jamyxer...");
+    jamyxer.start();
+
     let sender = server::CmdSender::new(
+        jamyxer.t_cmd.as_ref().unwrap().clone(),
         jacon.t_cmd.as_ref().unwrap().clone(),
-        jacon.t_cmd.as_ref().unwrap().clone(),
-        jacon.t_cmd.as_ref().unwrap().clone());
+        jamyxer.t_cmd.as_ref().unwrap().clone());
+    debug!(log, "Starting server...");
     server::start(log.clone(), sender);
 
+    debug!(log, "Done Activation phase!");
     let mut user_input = String::new();
     io::stdin().read_line(&mut user_input).ok();
 
