@@ -61,6 +61,29 @@ impl Port {
         Self::register(name, false, mono, cli)
     }
 
+    pub fn zero(&mut self, ps: &j::ProcessScope) {
+        if !self.is_output { return; /* TODO: Panic here or something */ }
+        match self.is_mono {
+            true => {
+                let ref mut port = self.ports.get_mut("M").unwrap();
+                let mut oport = jam::AnyAudioOutPort::new(port, ps);
+                for e in oport.iter_mut() { *e = 0.0 as f32; }
+            }
+            false => {
+                {
+                    let ref mut port_l = self.ports.get_mut("L").unwrap();
+                    let mut oport_l = jam::AnyAudioOutPort::new(port_l, ps);
+                    for e in oport_l.iter_mut() { *e = 0.0 as f32; }
+                }
+                {
+                    let ref mut port_r = self.ports.get_mut("R").unwrap();
+                    let mut oport_r = jam::AnyAudioOutPort::new(port_r, ps);
+                    for e in oport_r.iter_mut() { *e = 0.0 as f32; }
+                }
+            }
+        }
+    }
+
     pub fn copy_from(&mut self, other: &Self, vol: f32, balance: (f32, f32), ps: &j::ProcessScope, log: &slog::Logger) {
         if !self.is_output { return; /* TODO: Panic here or something */ }
 
@@ -72,7 +95,7 @@ impl Port {
                     let other_p = jam::AnyAudioInPort::new(&other.ports["M"], ps);
                     // oport.clone_from_slice(&other_p);
                     for (i, e) in oport.iter_mut().enumerate() {
-                        *e = other_p[i] * vol;
+                        *e += other_p[i] * vol;
                     }
                 } else {
                     // === STEREO TO MONO ===
@@ -80,10 +103,10 @@ impl Port {
                     let other_p_r = jam::AnyAudioInPort::new(&other.ports["R"], ps);
                     // oport.clone_from_slice(&other_p_l);
                     for (i, e) in oport.iter_mut().enumerate() {
-                        *e = other_p_l[i] * vol;
+                        *e += other_p_l[i] * vol;
                     }
                     for (i, e) in oport.iter_mut().enumerate() {
-                        *e *= other_p_r[i] * vol; // Multiply???
+                        *e += other_p_r[i] * vol; // Multiply???
                     }
             }
         } else {
@@ -96,14 +119,14 @@ impl Port {
                     let other_p = jam::AnyAudioInPort::new(&other.ports["M"], ps);
                     // oport_l.copy_from_slice(&other_p);
                     for (i, e) in oport_l.iter_mut().enumerate() {
-                        *e = other_p[i] * vol * balance.0;
+                        *e += other_p[i] * vol * balance.0;
                     }
                 } else {
                     // === STEREO TO STEREO ===
                     let other_p_l = jam::AnyAudioInPort::new(&other.ports["L"], ps);
                     // oport_l.copy_from_slice(&other_p_l);
                     for (i, e) in oport_l.iter_mut().enumerate() {
-                        *e = other_p_l[i] * vol * balance.0;
+                        *e += other_p_l[i] * vol * balance.0;
                     }
                 }
             }
@@ -116,14 +139,14 @@ impl Port {
                     let other_p = jam::AnyAudioInPort::new(&other.ports["M"], ps);
                     // oport_r.copy_from_slice(&other_p);
                     for (i, e) in oport_r.iter_mut().enumerate() {
-                        *e = other_p[i] * vol * balance.1;
+                        *e += other_p[i] * vol * balance.1;
                     }
                 } else {
                     // === STEREO TO STEREO ===
                     let other_p_r = jam::AnyAudioInPort::new(&other.ports["R"], ps);
                     // oport_r.copy_from_slice(&other_p_r);
                     for (i, e) in oport_r.iter_mut().enumerate() {
-                        *e = other_p_r[i] * vol * balance.1;
+                        *e += other_p_r[i] * vol * balance.1;
                     }
                 }
             }
@@ -189,22 +212,23 @@ impl Patchbay {
             let combine_balance = |a: (f32, f32), b: (f32, f32)| (a.0 * b.0, a.1 * b.1);
 
             // let cfg = cfg.lock().unwrap().clone();
-            for (ref name, ref config) in &cfg.read().unwrap().mixer.inputs {
-                ios.lock().unwrap().get_mut(*name).unwrap().copy_from(
-                    &ins.lock().unwrap()[*name],
+            for (ref i, ref config) in &cfg.read().unwrap().mixer.inputs {
+                ios.lock().unwrap().get_mut(*i).unwrap().zero(&scope);
+                ios.lock().unwrap().get_mut(*i).unwrap().copy_from(
+                    &ins.lock().unwrap()[*i],
                     config.get_vol() as f32,
                     config.get_balance_pair(),
                     &scope,
                     &log);
             }
+
             for (ref o, ref is) in &cfg.read().unwrap().mixer.connections {
+                outs.lock().unwrap().get_mut(*o).unwrap().zero(&scope);
                 for ref i in is.iter() {
-                    let mut outs = outs.lock().unwrap();
-                    let ins = ins.lock().unwrap();
                     let cfg = cfg.read().unwrap();
 
-                    outs.get_mut(*o).unwrap().copy_from(
-                        &ins[*i],
+                    outs.lock().unwrap().get_mut(*o).unwrap().copy_from(
+                        &ins.lock().unwrap()[*i],
                         cfg.mixer.inputs[*i].get_vol() as f32 *
                         cfg.mixer.outputs[*o].get_vol() as f32,
 
