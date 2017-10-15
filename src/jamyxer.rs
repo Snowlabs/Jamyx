@@ -243,13 +243,13 @@ impl Patchbay {
                         let connecting = match command.cmd.as_str() {
                             "con" => true,
                             "dis" => false,
-                            "tog" | _ => !cfg.read().unwrap().mixer.connections.is_connected(&oname, &iname),
+                            "tog" | _ => !cfg.read().unwrap().mixer.is_connected(&oname, &iname),
                         };
 
 
 
                         // Perform the (dis)connection
-                        cfg.write().unwrap().mixer.connections.connect(connecting, &oname, &iname);
+                        cfg.write().unwrap().mixer.connect(connecting, &oname, &iname);
 
                         let mut msg = format!("{0}connected `{1}` and `{2}`\nCurrently connected ports for output: `{2}`:",
                                           if connecting {""} else {"dis"}, iname, oname);
@@ -267,15 +267,20 @@ impl Patchbay {
                     "get" => {
                         let what = command.opts[0].clone();
                         match &*what {
-                            "volule"|"vol"|"v" => {
+                            "volule"|"vol"|"v"
+                            |"balance"|"bal"|"b" => {
                                 let ptype = command.opts[1].clone();
                                 let is_output = get_ptype(&ptype);
 
                                 let p_name = command.opts[2].clone();
-                                let vol = cfg.read().unwrap().mixer.get_vol(is_output, &p_name);
+                                let val = match &*what {
+                                    "volule"|"vol"|"v" => cfg.read().unwrap().mixer.get_vol(is_output, &p_name),
+                                    "balance"|"bal"|"b"|_ => cfg.read().unwrap().mixer.get_bal(is_output, &p_name),
+                                };
+                                // let vol = cfg.read().unwrap().mixer.get_vol(is_output, &p_name);
 
                                 let msg;
-                                match vol {
+                                match val {
                                     Ok(v) => { msg = format!("{}", v); },
                                     Err(_) => { msg = "Error: port not found!".to_string() },
                                 }
@@ -284,7 +289,7 @@ impl Patchbay {
                                 let _ = stream.write(msg.as_bytes());
                                 let _ = stream.write(b"\n");
                                 let _ = stream.flush().log_err(&log);
-                                info!(log, "Vol of {}: `{}`: {}", ptype, p_name, msg);
+                                info!(log, "{} of {}: `{}`: {}", what, ptype, p_name, msg);
                             }
                             "connections"|"cons"|"con"|"c" => {
                                 let ptype = command.opts[1].clone();
@@ -315,9 +320,66 @@ impl Patchbay {
                         }
 
                     }
-                    /*
                     "mon" => {
+                        let what = command.opts[0].clone();
+                        match &*what {
+                            "volume"|"vol"|"v"
+                            |"connections"|"cons"|"con"|"c"
+                            |"balance"|"bal"|"b"=> {
+                                let ptype = command.opts[1].clone();
+                                let is_output = get_ptype(&ptype);
+                                let p_name = command.opts[2].clone();
+                                let h_name = match &*what {
+                                    "volume"|"vol"|"v" => {
+                                        if is_output { "output_vol" } else { "input_vol" }
+                                    },
+                                    "connections"|"cons"|"con"|"c" => {
+                                        if is_output { "output_con" } else { "input_con" }
+                                    },
+                                    "balance"|"bal"|"b"|_ => {
+                                        if is_output { "output_bal" } else { "input_bal" }
+                                    },
+                                }.to_owned();
+
+                                info!(log, "Hooking {} monitor", h_name);
+                                cfg.write().unwrap().mixer.hook(h_name, p_name, stream);
+                            }
+                            _ => {}
+                        }
                     }
+                    "set" => {
+                        let what = command.opts[0].clone();
+                        match &*what {
+                            "volule"|"vol"|"v"
+                            |"balance"|"bal"|"b" => {
+                                let ptype = command.opts[1].clone();
+                                let is_output = get_ptype(&ptype);
+
+                                let p_name = command.opts[2].clone();
+                                let val = command.opts[3].clone().parse().unwrap();
+                                let ret = match &*what {
+                                    "volule"|"vol"|"v" => cfg.write().unwrap().mixer.set_vol(is_output, &p_name.clone(), val),
+                                    "balance"|"bal"|"b"|_ => cfg.write().unwrap().mixer.set_bal(is_output, &p_name.clone(), val),
+                                };
+                                // let vol = cfg.read().unwrap().mixer.get_vol(is_output, &p_name);
+
+                                let msg;
+                                match ret {
+                                    Ok(_) => { msg = format!("{} of {}: `{}`: {}", what, ptype, p_name, val); },
+                                    Err(_) => { msg = "Error: port not found!".to_string() },
+                                }
+                                // let msg = format!("{:?}", vol);
+
+                                let _ = stream.write(msg.as_bytes());
+                                let _ = stream.write(b"\n");
+                                let _ = stream.flush().log_err(&log);
+                                info!(log, "{}", msg);
+                            }
+                            _ => {}
+                        }
+
+                    }
+                    /*
                     "mkp" => {
                     }
                     "rmp" => {
