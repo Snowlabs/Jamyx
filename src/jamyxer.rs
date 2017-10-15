@@ -17,7 +17,6 @@ use config;
 use server;
 
 use utils::LogError;
-use utils::Connections;
 
 type AM<T> = Arc<Mutex<T>>;
 type AMAnyClient = AM<jam::AnyClient>;
@@ -163,6 +162,8 @@ pub struct Patchbay {
     input_outs: AM<HashMap<String, Port>>,
     outputs: AM<HashMap<String, Port>>,
 
+    monitor_port: Option<AM<Port>>,
+
     pub t_cmd: Option<Sender<(TcpStream, server::Command)>>,
     cmd_thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -176,6 +177,8 @@ impl Patchbay {
             inputs: Arc::new(Mutex::new(HashMap::new())),
             input_outs: Arc::new(Mutex::new(HashMap::new())),
             outputs: Arc::new(Mutex::new(HashMap::new())),
+
+            monitor_port: None,
 
             t_cmd: None,
             cmd_thread: None,
@@ -200,6 +203,9 @@ impl Patchbay {
                 Port::register_output(&name, config.is_mono(), &self.cli.lock().unwrap())
                 );
         }
+
+        let monitor_port = Arc::new(Mutex::new(Port::register_output("MONITOR", false, &self.cli.lock().unwrap())));
+        self.monitor_port = Some(monitor_port.clone());
 
         // Hook process callback
         let log = self.log.clone();
@@ -239,6 +245,24 @@ impl Patchbay {
                         &scope,
                         &log);
                 }
+            }
+
+            {
+                let is_output = !cfg.read().unwrap().mixer.monitor.is_input;
+                // let config = cfg.read().unwrap().mixer.get_vol
+                let ref moned_port_name = cfg.read().unwrap().mixer.monitor.channel;
+                let ref moned_port = match cfg.read().unwrap().mixer.monitor.is_input {
+                    true => ins.lock().unwrap(),
+                    false => outs.lock().unwrap(),
+                }[moned_port_name];
+                // debug!(log, "copying mon... {} to monitor port", moned_port_name);
+                monitor_port.lock().unwrap().zero(&scope);
+                monitor_port.lock().unwrap().copy_from(
+                        moned_port,
+                        cfg.read().unwrap().mixer.get_vol(is_output, moned_port_name).unwrap(),
+                        cfg.read().unwrap().mixer.get_bal_pair(is_output, moned_port_name).unwrap(),
+                        &scope,
+                        &log);
             }
 
             return j::JackControl::Continue;

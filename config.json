@@ -1,21 +1,21 @@
 {
     "connections": {
-        "system:capture_1": ["jamyxer:Mic L", "jamyxer:Mic R"],
+        "system:capture_1": ["Jacon:Mic M"],
 
-        "python2:out_jackaudiosink0_1": ["jamyxer:MPD L"],
-        "python2:out_jackaudiosink0_2": ["jamyxer:MPD R"],
+        "python2:out_jackaudiosink0_1": ["Jacon:MPD L"],
+        "python2:out_jackaudiosink0_2": ["Jacon:MPD R"],
 
-        "PulseAudio JACK Sink:front-left":  ["jamyxer:PulseSink L"],
-        "PulseAudio JACK Sink:front-right": ["jamyxer:PulseSink R"],
+        "PulseAudio JACK Sink:front-left":  ["Jacon:PulseSink L"],
+        "PulseAudio JACK Sink:front-right": ["Jacon:PulseSink R"],
 
-        "jamyxer:PUBLIC L": ["PulseAudio JACK Source:front-left"],
-        "jamyxer:PUBLIC R": ["PulseAudio JACK Source:front-right"],
+        "Jacon:PUBLIC L": ["PulseAudio JACK Source:front-left"],
+        "Jacon:PUBLIC R": ["PulseAudio JACK Source:front-right"],
 
-        "jamyxer:MPD Out L": ["jamyxer:PrivMPD L", "jamyxer:PubMPD L"],
-        "jamyxer:MPD Out R": ["jamyxer:PrivMPD R", "jamyxer:PubMPD R"],
+        "Jacon:MPD Out L": ["Jacon:PrivMPD L", "Jacon:PubMPD L"],
+        "Jacon:MPD Out R": ["Jacon:PrivMPD R", "Jacon:PubMPD R"],
 
-        "jamyxer:MONITOR L": ["system:playback_1"],
-        "jamyxer:MONITOR R": ["system:playback_2"]
+        "Jacon:MONITOR L": ["system:playback_1"],
+        "Jacon:MONITOR R": ["system:playback_2"]
     },
 
     "mixer": {
@@ -30,7 +30,7 @@
             "PUBLIC":  { "vol": 100.0 }
         },
         "inputs" : {
-            "MPD":        { "vol": 100.0 },
+            "MPD":        { "vol": 30.0 },
             "Mic":        { "mono": true, "vol": 90.0 },
             "PrivMPD":    { "vol": 100.0 },
             "PubMPD":     { "vol": 100.0 },
