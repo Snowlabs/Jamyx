@@ -1,5 +1,16 @@
 # Jamyx
+![logo](assets/jamyx.png)
+***
 
+<p align="center">
+<b><a href="#usage">Usage</a></b>
+|
+<b><a href="#installation">Installation</a></b>
+|
+<b><a href="#ipc">IPC Specs</a></b>
+</p>
+
+***
 A Jackaudio mixer/patchbay suite written in rust
 
 Jamyx is meant to be an easy to use alternative to qjackctl.
