@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::io::Write;
 use std::collections::{HashMap, HashSet};
 
+use serde_json;
+
 use jack::prelude as j;
 use jam::JackClientUtils;
 
@@ -269,19 +271,31 @@ impl ConnectionKit {
 
                         // Perform the (dis)connection
                         cfg.write().unwrap().connections.connect(connecting, &iname, &oname);
-                        t_sig.send(Signals::TryConnection(connecting, iname, oname));
+                        t_sig.send(Signals::TryConnection(connecting, iname.clone(), oname.clone()));
 
-                        let _ = stream.write(msg.as_bytes());
-                        let _ = stream.write(b"\n");
-                        let _ = stream.flush().log_err(&log);
-                        info!(log, "{}", msg);
+                        server::write_response(&log, &server::Response {
+                            ret: 0, msg: &format!("{}connection", if connecting {""} else {"dis"}), obj: json!({
+                                "output_name": &oname,
+                                "input_name": &iname,
+                            })
+                        }, &mut stream);
+                        drop(stream)
+                        // let _ = stream.write(msg.as_bytes());
+                        // let _ = stream.write(b"\n");
+                        // let _ = stream.flush().log_err(&log);
+                        // info!(log, "{}", msg);
                     }
                     _ => {
-                        let msg = format!("Bad command: `{}`", command.cmd);
-                        let _ = stream.write(msg.as_bytes());
-                        let _ = stream.write(b"\n");
-                        let _ = stream.flush().log_err(&log);
-                        error!(log, "{}", msg);
+                        server::write_response(
+                            &log,
+                            &server::Response { ret: 1, msg: "Bad command!", obj: serde_json::Value::Null, },
+                            &mut stream);
+                        drop(stream);
+                        // let msg = format!("Bad command: `{}`", command.cmd);
+                        // let _ = stream.write(msg.as_bytes());
+                        // let _ = stream.write(b"\n");
+                        // let _ = stream.flush().log_err(&log);
+                        // error!(log, "{}", msg);
                     }
                 }
             }

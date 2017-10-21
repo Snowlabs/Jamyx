@@ -12,6 +12,22 @@ use std::error::Error;
 use utils::LogError;
 use jacon;
 
+#[derive(Serialize)]
+pub struct Response<'a> {
+    pub ret: i32,
+    pub msg: &'a str,
+    pub obj: serde_json::Value,
+}
+
+pub fn write_response(log: &slog::Logger, r: &Response, stream: &mut TcpStream) {
+    let msg = serde_json::to_string(&r).unwrap();
+    // let msg = format!("Bad command: `{}`", command.cmd);
+    let _ = stream.write(msg.as_bytes());
+    let _ = stream.write(b"\n");
+    let _ = stream.flush().log_err(&log);
+    debug!(log, "{}", msg);
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Command {
     pub target: String,

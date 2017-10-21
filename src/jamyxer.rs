@@ -13,6 +13,8 @@ use std::collections::{HashMap, HashSet};
 use jam::JackClientUtils;
 use jack::prelude as j;
 
+use serde_json::Value;
+
 use config;
 use server;
 
@@ -299,73 +301,132 @@ impl Patchbay {
                         // Perform the (dis)connection
                         cfg.write().unwrap().mixer.connect(connecting, &oname, &iname);
 
-                        let mut msg = format!("{0}connected `{1}` and `{2}`\nCurrently connected ports for output: `{2}`:",
-                                          if connecting {""} else {"dis"}, iname, oname);
-                        for i in &cfg.read().unwrap().mixer.connections[&oname] {
-                            msg = format!("{}\n- {}", msg, i);
+                        if cfg.read().unwrap().mixer.port_exists(true, &oname.to_string()) {
+                            cfg.read().unwrap().mixer.write_info_response(
+                                true, &oname.to_string(), &mut stream, &log
+                                );
+                        } else {
+                            server::write_response(&log, &server::Response {
+                                ret: 2, msg: "Port not found!", obj: Value::Null
+                            }, &mut stream);
                         }
+                        drop(stream);
+
+                        // let mut msg = format!("{0}connected `{1}` and `{2}`\nCurrently connected ports for output: `{2}`:",
+                        //                   if connecting {""} else {"dis"}, iname, oname);
+                        // for i in &cfg.read().unwrap().mixer.connections[&oname] {
+                        //     msg = format!("{}\n- {}", msg, i);
+                        // }
 
 
-                        let _ = stream.write(msg.as_bytes());
-                        let _ = stream.write(b"\n");
-                        let _ = stream.flush().log_err(&log);
-                        info!(log, "{}", msg);
+                        // let _ = stream.write(msg.as_bytes());
+                        // let _ = stream.write(b"\n");
+                        // let _ = stream.flush().log_err(&log);
+                        // info!(log, "{}", msg);
 
                     }
                     "get" => {
-                        let what = command.opts[0].clone();
-                        match &*what {
-                            "volule"|"vol"|"v"
-                            |"balance"|"bal"|"b" => {
-                                let ptype = command.opts[1].clone();
-                                let is_output = get_ptype(&ptype);
-
-                                let p_name = command.opts[2].clone();
-                                let val = match &*what {
-                                    "volule"|"vol"|"v" => cfg.read().unwrap().mixer.get_vol(is_output, &p_name),
-                                    "balance"|"bal"|"b"|_ => cfg.read().unwrap().mixer.get_bal(is_output, &p_name),
-                                };
-                                // let vol = cfg.read().unwrap().mixer.get_vol(is_output, &p_name);
-
-                                let msg;
-                                match val {
-                                    Ok(v) => { msg = format!("{}", v); },
-                                    Err(_) => { msg = "Error: port not found!".to_string() },
-                                }
-                                // let msg = format!("{:?}", vol);
-
-                                let _ = stream.write(msg.as_bytes());
-                                let _ = stream.write(b"\n");
-                                let _ = stream.flush().log_err(&log);
-                                info!(log, "{} of {}: `{}`: {}", what, ptype, p_name, msg);
-                            }
-                            "connections"|"cons"|"con"|"c" => {
-                                let ptype = command.opts[1].clone();
-                                let is_output = get_ptype(&ptype);
-                                let p_name = command.opts[2].clone();
-
-                                let cons = cfg.read().unwrap().mixer.get_connected(is_output, &p_name);
-
-                                let mut msg;
-                                match cons {
-                                    Ok(c) => {
-                                        msg = format!("Currently connected ports for {}: `{}`:",
-                                                      if is_output {"output"} else {"input"}, p_name);
-                                        for p in &c {
-                                            msg = format!("{}\n- {}", msg, p);
-                                        }
-                                    }
-                                    Err(_) => { msg = "Error: port not found!".to_string() },
+                        // get all i/os
+                        match command.opts[0].as_str() {
+                            "ports"|"channels" => {
+                                let cfg = cfg.read().unwrap();
+                                // let ref names: Vec<&String> = match is_output {
+                                //     true => &cfg.mixer.outputs,
+                                //     false => &cfg.mixer.inputs,
+                                // }.keys().collect();
+                                let inames: Vec<&String> = cfg.mixer.inputs.keys().collect();
+                                let mut inputs: Vec<Value> = Vec::new();
+                                for iname in inames {
+                                    inputs.push(cfg.mixer.get_port_info(false, iname).unwrap());
                                 }
 
+                                let onames: Vec<&String> = cfg.mixer.outputs.keys().collect();
+                                let mut outputs: Vec<Value> = Vec::new();
+                                for oname in onames {
+                                    outputs.push(cfg.mixer.get_port_info(true, oname).unwrap());
+                                }
 
-                                let _ = stream.write(msg.as_bytes());
-                                let _ = stream.write(b"\n");
-                                let _ = stream.flush().log_err(&log);
-                                info!(log, "{}", msg);
+                                server::write_response(&log, &server::Response {
+                                    ret: 0, msg: "channels", obj: json!({ "inputs": inputs, "outputs": outputs, })
+                                }, &mut stream);
+                                drop(stream);
                             }
-                            _ => {}
+                            "monitor"|"mon" => {
+                                let cfg = cfg.read().unwrap();
+                                cfg.mixer.write_info_response(!cfg.mixer.monitor.is_input, &cfg.mixer.monitor.channel, &mut stream, &log);
+                                drop(stream);
+                            }
+                            _ => {
+                                let ptype = command.opts[0].clone();
+                                let is_output = get_ptype(&ptype);
+                                let p_name = command.opts[1].clone();
+
+                                if cfg.read().unwrap().mixer.port_exists(is_output, &p_name.to_string()) {
+                                    cfg.read().unwrap().mixer.write_info_response(
+                                        is_output, &p_name.to_string(), &mut stream, &log
+                                        );
+                                } else {
+                                    server::write_response(&log, &server::Response {
+                                        ret: 2, msg: "Port not found!", obj: Value::Null
+                                    }, &mut stream);
+                                }
+                                drop(stream);
+                            }
                         }
+
+                        // let what = command.opts[0].clone();
+                        // match &*what {
+                        //     "volule"|"vol"|"v"
+                        //     |"balance"|"bal"|"b" => {
+                        //         let ptype = command.opts[1].clone();
+                        //         let is_output = get_ptype(&ptype);
+
+                        //         let p_name = command.opts[2].clone();
+                        //         let val = match &*what {
+                        //             "volule"|"vol"|"v" => cfg.read().unwrap().mixer.get_vol(is_output, &p_name),
+                        //             "balance"|"bal"|"b"|_ => cfg.read().unwrap().mixer.get_bal(is_output, &p_name),
+                        //         };
+                        //         // let vol = cfg.read().unwrap().mixer.get_vol(is_output, &p_name);
+
+                        //         let msg;
+                        //         match val {
+                        //             Ok(v) => { msg = format!("{}", v); },
+                        //             Err(_) => { msg = "Error: port not found!".to_string() },
+                        //         }
+                        //         // let msg = format!("{:?}", vol);
+
+                        //         let _ = stream.write(msg.as_bytes());
+                        //         let _ = stream.write(b"\n");
+                        //         let _ = stream.flush().log_err(&log);
+                        //         info!(log, "{} of {}: `{}`: {}", what, ptype, p_name, msg);
+                        //     }
+                        //     "connections"|"cons"|"con"|"c" => {
+                        //         let ptype = command.opts[1].clone();
+                        //         let is_output = get_ptype(&ptype);
+                        //         let p_name = command.opts[2].clone();
+
+                        //         let cons = cfg.read().unwrap().mixer.get_connected(is_output, &p_name);
+
+                        //         let mut msg;
+                        //         match cons {
+                        //             Ok(c) => {
+                        //                 msg = format!("Currently connected ports for {}: `{}`:",
+                        //                               if is_output {"output"} else {"input"}, p_name);
+                        //                 for p in &c {
+                        //                     msg = format!("{}\n- {}", msg, p);
+                        //                 }
+                        //             }
+                        //             Err(_) => { msg = "Error: port not found!".to_string() },
+                        //         }
+
+
+                        //         let _ = stream.write(msg.as_bytes());
+                        //         let _ = stream.write(b"\n");
+                        //         let _ = stream.flush().log_err(&log);
+                        //         info!(log, "{}", msg);
+                        //     }
+                        //     _ => {}
+                        // }
 
                     }
                     "mon" => {
@@ -390,7 +451,7 @@ impl Patchbay {
                                 }.to_owned();
 
                                 info!(log, "Hooking {} monitor", h_name);
-                                cfg.write().unwrap().mixer.hook(h_name, p_name, stream);
+                                cfg.write().unwrap().mixer.hook(h_name, p_name, stream, log.clone());
                             }
                             _ => {}
                         }
@@ -411,17 +472,47 @@ impl Patchbay {
                                 };
                                 // let vol = cfg.read().unwrap().mixer.get_vol(is_output, &p_name);
 
-                                let msg;
+                                // let msg;
                                 match ret {
-                                    Ok(_) => { msg = format!("{} of {}: `{}`: {}", what, ptype, p_name, val); },
-                                    Err(_) => { msg = "Error: port not found!".to_string() },
+                                    Ok(_) => {
+                                        cfg.read().unwrap().mixer.write_info_response(
+                                            is_output, &p_name.to_string(), &mut stream, &log
+                                            );
+                                    },
+                                    Err(_) => {
+                                        server::write_response(&log, &server::Response {
+                                            ret: 2, msg: "Port not found!", obj: Value::Null
+                                        }, &mut stream);
+                                        // msg = "Error: port not found!".to_string()
+                                    },
                                 }
+                                drop(stream);
                                 // let msg = format!("{:?}", vol);
 
-                                let _ = stream.write(msg.as_bytes());
-                                let _ = stream.write(b"\n");
-                                let _ = stream.flush().log_err(&log);
-                                info!(log, "{}", msg);
+                                // let _ = stream.write(msg.as_bytes());
+                                // let _ = stream.write(b"\n");
+                                // let _ = stream.flush().log_err(&log);
+                                // info!(log, "{}", msg);
+                            }
+                            "monitor"|"mon"|"m" => {
+                                let ptype = command.opts[1].clone();
+                                let is_output = get_ptype(&ptype);
+
+                                let p_name = command.opts[2].clone();
+                                let res = cfg.write().unwrap().mixer.set_mon(is_output, &p_name);
+                                match res {
+                                    Ok(_) => {
+                                        cfg.read().unwrap().mixer.write_info_response(
+                                            is_output, &p_name.to_string(), &mut stream, &log
+                                            );
+                                    },
+                                    Err(_) => {
+                                        server::write_response(&log, &server::Response {
+                                            ret: 2, msg: "Port not found!", obj: Value::Null
+                                        }, &mut stream);
+                                    },
+                                }
+                                drop(stream);
                             }
                             _ => {}
                         }
@@ -435,11 +526,16 @@ impl Patchbay {
 
                      */
                     _ => {
-                        let msg = format!("Bad command: `{}`", command.cmd);
-                        let _ = stream.write(msg.as_bytes());
-                        let _ = stream.write(b"\n");
-                        let _ = stream.flush().log_err(&log);
-                        error!(log, "{}", msg);
+                        server::write_response(
+                            &log,
+                            &server::Response { ret: 1, msg: "Bad command!", obj: Value::Null, },
+                            &mut stream);
+                        drop(stream);
+                        // let msg = format!("Bad command: `{}`", command.cmd);
+                        // let _ = stream.write(msg.as_bytes());
+                        // let _ = stream.write(b"\n");
+                        // let _ = stream.flush().log_err(&log);
+                        // error!(log, "{}", msg);
                     }
                 }
             }
