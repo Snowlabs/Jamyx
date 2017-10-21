@@ -19,35 +19,22 @@ Jamyx offers a patchbay utility as well as a full featured audio mixer! After so
 Some key features include:
 
 **Mixer**:
-
 - Individual volume and balance control over ports
 - Support for mono and stereo ports
 - Supper for monitor channel
 - Connection of volume-controlled ports to volume-controlled outputs in a grid-like system
 
 **Patchbay**:
-
 - Automatic event-based (dis)connections of ports when they appear
 - Automatic retrial of (dis)connections when they fail
 - Multithreaded and event-based, so never skips a beat!
 
 **General**:
-
 - On-the-fly loading and saving of current configuration state with non need to restart the daemon.
 - Jack server reconnection loop. This means the Jamyx server is independant of the Jackaudio server and will wait for it to restart in case it stops or crashes. Crashing or stopping the Jack server will not crash the Jamyx server.
-
-
 - Multithreaded IPC
-
-
 - Easy IPC for server-client communication:
-
   - Monitor any port property and event (e.g.: wait for change in volume of a certain port)
-
   - Getters & Setters for all properties
-
   - Create, delete and rename volume-controlled ports
-
   - Json is used for easy (de)serializing of commands and replies
-
-    ​
