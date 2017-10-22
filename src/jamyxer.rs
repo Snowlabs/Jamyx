@@ -164,7 +164,7 @@ pub struct Patchbay {
     input_outs: AM<HashMap<String, Port>>,
     outputs: AM<HashMap<String, Port>>,
 
-    monitor_port: Option<AM<Port>>,
+    monitor_port: AM<Option<Port>>,
 
     pub t_cmd: Option<Sender<(TcpStream, server::Command)>>,
     cmd_thread: Option<std::thread::JoinHandle<()>>,
@@ -180,7 +180,7 @@ impl Patchbay {
             input_outs: Arc::new(Mutex::new(HashMap::new())),
             outputs: Arc::new(Mutex::new(HashMap::new())),
 
-            monitor_port: None,
+            monitor_port: Arc::new(Mutex::new(None)),
 
             t_cmd: None,
             cmd_thread: None,
@@ -188,26 +188,37 @@ impl Patchbay {
     }
 
     pub fn init(&mut self, jclient: &mut jam::Client) {
-        for (ref name, ref config) in &self.cfg.read().unwrap().mixer.inputs {
-            self.inputs.lock().unwrap().insert(
-                name.clone().to_owned(),
-                Port::register_input(&name, config.is_mono(), &self.cli.lock().unwrap())
-                );
-            self.input_outs.lock().unwrap().insert(
-                name.clone().to_owned(),
-                Port::register_output(&format!("{} Out", name), config.is_mono(), &self.cli.lock().unwrap())
-                );
-        }
+        let ins = self.inputs.clone();
+        let ios = self.input_outs.clone();
+        let outs = self.outputs.clone();
+        let cfg = self.cfg.clone();
+        let cli = self.cli.clone();
+        let mon_port = self.monitor_port.clone();
 
-        for (ref name, ref config) in &self.cfg.read().unwrap().mixer.outputs {
-            self.outputs.lock().unwrap().insert(
-                name.clone().to_owned(),
-                Port::register_output(&name, config.is_mono(), &self.cli.lock().unwrap())
-                );
-        }
+        let register_ports = move || {
+            for (ref name, ref config) in &cfg.read().unwrap().mixer.inputs {
+                ins.lock().unwrap().insert(
+                    name.clone().to_owned(),
+                    Port::register_input(&name, config.is_mono(), &cli.lock().unwrap())
+                    );
+                ios.lock().unwrap().insert(
+                    name.clone().to_owned(),
+                    Port::register_output(&format!("{} Out", name), config.is_mono(), &cli.lock().unwrap())
+                    );
+            }
 
-        let monitor_port = Arc::new(Mutex::new(Port::register_output("MONITOR", false, &self.cli.lock().unwrap())));
-        self.monitor_port = Some(monitor_port.clone());
+            for (ref name, ref config) in &cfg.read().unwrap().mixer.outputs {
+                outs.lock().unwrap().insert(
+                    name.clone().to_owned(),
+                    Port::register_output(&name, config.is_mono(), &cli.lock().unwrap())
+                    );
+            }
+
+            let monitor_port = Port::register_output("MONITOR", false, &cli.lock().unwrap());
+            *mon_port.lock().unwrap() = Some(monitor_port);
+        };
+        register_ports();
+        jclient.hook(jam::CB::client_reconnection(Box::new(register_ports)));
 
         // Hook process callback
         let log = self.log.clone();
@@ -215,8 +226,10 @@ impl Patchbay {
         let ios = self.input_outs.clone();
         let outs = self.outputs.clone();
         let cfg = self.cfg.clone();
+        let monitor_port = self.monitor_port.clone();
         jclient.hook(jam::CB::process(Box::new(move |cli, scope| {
             // debug!(log, "test: {:?}", cfg.lock().unwrap().mixer.outputs);
+            debug!(log, "PROC");
             let combine_balance = |a: (f32, f32), b: (f32, f32)| (a.0 * b.0, a.1 * b.1);
 
             // let cfg = cfg.lock().unwrap().clone();
@@ -258,8 +271,8 @@ impl Patchbay {
                     false => outs.lock().unwrap(),
                 }[moned_port_name];
                 // debug!(log, "copying mon... {} to monitor port", moned_port_name);
-                monitor_port.lock().unwrap().zero(&scope);
-                monitor_port.lock().unwrap().copy_from(
+                monitor_port.lock().unwrap().as_mut().unwrap().zero(&scope);
+                monitor_port.lock().unwrap().as_mut().unwrap().copy_from(
                         moned_port,
                         cfg.read().unwrap().mixer.get_vol(is_output, moned_port_name).unwrap(),
                         cfg.read().unwrap().mixer.get_bal_pair(is_output, moned_port_name).unwrap(),
