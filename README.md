@@ -49,3 +49,101 @@ Some key features include:
   - Getters & Setters for all properties
   - Create, delete and rename volume-controlled ports
   - Json is used for easy (de)serializing of commands and replies
+
+## IPC Specifications
+Interprocess communication is done via a TCP connection to the Jamyx server (default port: `56065`). The messages are formatted in Json as follows:
+
+### Format
+**Command**
+```json
+{
+    "target": "<TARGET>",      One of "myx" and "con" for targetting
+                                the mixer and the patchbay respectively
+    "cmd":    "<COMMAND>",     One of the later described commands
+    "opts":   ["<OPTIONS>"]    The options for the chosen command
+}
+```
+
+**Reply**
+```json
+{
+    "ret": <RETURN CODE>        The return code of the command (0 = good)
+    "msg": <MESSAGE>            Short description of return object or error
+    "obj": <RETURN OBJECT TREE> Object tree caintaining information
+                                 returned by the command
+                                 (described in seperate command descs.)
+}
+```
+
+## Commands (target: myx)
+### con/dis/tog
+Connect/Disconnect/Toggle two channels together
+
+**Command**
+
+|key|value|description|
+|---|-----|----|
+|target|`"myx"`|
+|cmd|`"CMD"`|`con`, `dis`, or `tog` for connecting, disconnecting and toggling connection|
+|opts|`["INPUT_NAME", "OUTPUT_NAME"]`|the names of the two channels
+
+**Return object**
+
+This command returns the [port object][1] of the output port
+
+### get
+Get port(s) specified
+
+**Command**
+
+|key|value|description|
+|---|-----|----|
+|target|`"myx"`|
+|cmd|`"get"`|
+|opts|`["monitor"]` **OR** `["channels"]` **OR** `["TYPE", "NAME"]`| get monitor channel **OR** get all in/output ports **OR** get specified channel where `TYPE` is `in` or `out` and `NAME` is the name of the channel|
+
+**Return object**
+
+This command returns [port object][1] of the specified port.
+
+For the `get channels` command, this returns the following object:
+```json
+{
+    "inputs": [OBJS],
+    "outputs": [OBJS]
+}
+```
+where the `OBJS` are [port objects][1]
+
+### mon
+Wait for a certain event and then return the
+
+**Command**
+
+|key|value|description|
+|---|-----|----|
+|target|`"myx"`|
+|cmd|`"mon"`|monitor property on a certain port|
+|opts|`["PROPERTY", "TYPE", "NAME"]`| where `PROPERTY` is any of `volume`, `connections`, or `balance`, **and** `TYPE` is `in` or `out` **and** `NAME` is the name of the channel|
+
+**Return object**
+
+This command returns [port object][1] of the specified port once the monitored property has changed.
+
+
+### set
+Set the value of a certain property
+
+**Command**
+
+|key|value|description|
+|---|-----|----|
+|target|`"myx"`|
+|cmd|`"set"`|set the value of a property of a channel or set the monitor channel|
+|opts|`["PROPERTY", "TYPE", "NAME", "VALUE"]`**OR**`["monitor", "TYPE", "NAME"]`|where `PROPERTY` is `volume` or `balance`, **and** `TYPE` is `in` or `out` **and** `NAME` is the name of the channel **and** `VALUE` is the new value|
+
+**Return object**
+
+This command returns [port object][1] of the specified port.
+
+[1]: #port-object
