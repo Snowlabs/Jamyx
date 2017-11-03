@@ -229,7 +229,7 @@ impl Patchbay {
         let monitor_port = self.monitor_port.clone();
         jclient.hook(jam::CB::process(Box::new(move |cli, scope| {
             // debug!(log, "test: {:?}", cfg.lock().unwrap().mixer.outputs);
-            debug!(log, "PROC");
+            // debug!(log, "PROC");
             let combine_balance = |a: (f32, f32), b: (f32, f32)| (a.0 * b.0, a.1 * b.1);
 
             // let cfg = cfg.lock().unwrap().clone();

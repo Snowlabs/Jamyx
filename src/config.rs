@@ -16,43 +16,28 @@ use server;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PortConfig {
-    #[serde(default)]
+    #[serde(default = "PortConfig::default_val")]
     vol: serde_json::Value,
-    #[serde(default)]
+    #[serde(default = "PortConfig::default_val")]
     pub mono: serde_json::Value,
-    #[serde(default)]
+    #[serde(default = "PortConfig::default_val_bool")]
     pub balance: serde_json::Value,
 }
 
 impl PortConfig {
-    pub fn get_vol(&self) -> f32 {
-        if self.vol.is_null() {
-            100.0 / 100.0
-        } else {
-            self.vol.as_f64().unwrap() as f32 / 100.0
-        }
-    }
+    fn default_val() -> serde_json::Value { json!(1.0) }
+    fn default_val_bool() -> serde_json::Value { json!(false) }
 
-    pub fn get_balance(&self) -> f32 {
-        if self.balance.is_null() {
-            0.0
-        } else {
-            self.balance.as_f64().unwrap() as f32
-        }
-    }
+    pub fn get_vol(&self) -> f32 { self.vol.as_f64().unwrap() as f32 / 100.0 }
+
+    pub fn get_balance(&self) -> f32 { self.balance.as_f64().unwrap() as f32 }
 
     pub fn get_balance_pair(&self) -> (f32, f32) {
         let b = self.get_balance();
         (b+1.0, -b+1.0)
     }
 
-    pub fn is_mono(&self) -> bool {
-        if self.mono.is_null() {
-            false
-        } else {
-            self.mono.as_bool().unwrap()
-        }
-    }
+    pub fn is_mono(&self) -> bool { self.mono.as_bool().unwrap() }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
