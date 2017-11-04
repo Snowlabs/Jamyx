@@ -16,28 +16,29 @@ use server;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct PortConfig {
-    #[serde(default = "PortConfig::default_val")]
-    vol: serde_json::Value,
-    #[serde(default = "PortConfig::default_val")]
-    pub mono: serde_json::Value,
-    #[serde(default = "PortConfig::default_val_bool")]
-    pub balance: serde_json::Value,
+    #[serde(default = "PortConfig::default_vol")]
+    pub vol: f32,
+    #[serde(default = "PortConfig::default_bal")]
+    pub balance: f32,
+    #[serde(default = "PortConfig::default_mono")]
+    pub mono: bool,
 }
 
 impl PortConfig {
-    fn default_val() -> serde_json::Value { json!(1.0) }
-    fn default_val_bool() -> serde_json::Value { json!(false) }
+    fn default_vol() -> f32 { 100.0 as f32 }
+    fn default_bal() -> f32 { 0.0 as f32 }
+    fn default_mono() -> bool { false }
 
-    pub fn get_vol(&self) -> f32 { self.vol.as_f64().unwrap() as f32 / 100.0 }
+    pub fn get_vol(&self) -> f32 { self.vol / 100.0 }
 
-    pub fn get_balance(&self) -> f32 { self.balance.as_f64().unwrap() as f32 }
+    pub fn get_balance(&self) -> f32 { self.balance }
 
     pub fn get_balance_pair(&self) -> (f32, f32) {
         let b = self.get_balance();
         (b+1.0, -b+1.0)
     }
 
-    pub fn is_mono(&self) -> bool { self.mono.as_bool().unwrap() }
+    pub fn is_mono(&self) -> bool { self.mono }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -109,13 +110,13 @@ impl MixerConfig {
 
     pub fn set_vol(&mut self, is_output: bool, name: &String, vol: f32) -> Result<(), ()> {
         if !self.port_exists(is_output, name) { return Err(()); }
-        let _vol = serde_json::Number::from_f64(vol as f64);
-        match _vol {
-            Some(_vol) => {
+        // let _vol = serde_json::Number::from_f64(vol as f64);
+        // match _vol {
+            // Some(_vol) => {
                 match is_output {
                     true => &mut self.outputs,
                     false => &mut self.inputs,
-                }.get_mut(name).unwrap().vol = serde_json::Value::Number(_vol);
+                }.get_mut(name).unwrap().vol = vol;
                 if let Some(mut hs) = self.mon_hooks
                         .entry(if is_output {"output_vol".to_owned()} else {"input_vol".to_owned()})
                         .or_insert(HashMap::new())
@@ -132,9 +133,9 @@ impl MixerConfig {
                     hs.clear();
                 }
                 Ok(())
-            },
-            None => Err(()),
-        }
+            // },
+            // None => Err(()),
+        // }
 
     }
 
@@ -231,11 +232,11 @@ impl MixerConfig {
 
     pub fn set_bal(&mut self, is_output: bool, pname: &String, balance: f32) -> Result<(), ()> {
         if !self.port_exists(is_output, &pname) { return Err(()); }
-        let _bal = serde_json::Number::from_f64(balance as f64).unwrap();
+        // let _bal = serde_json::Number::from_f64(balance as f64).unwrap();
         match is_output {
             true => &mut self.outputs,
             false => &mut self.inputs,
-        }.get_mut(pname).unwrap().balance = serde_json::Value::Number(_bal);
+        }.get_mut(pname).unwrap().balance = balance;
         if let Some(mut hs) = self.mon_hooks
                 .entry(if is_output {"output_bal".to_owned()} else {"input_bal".to_owned()})
                 .or_insert(HashMap::new())
