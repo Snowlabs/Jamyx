@@ -110,33 +110,26 @@ impl MixerConfig {
 
     pub fn set_vol(&mut self, is_output: bool, name: &String, vol: f32) -> Result<(), ()> {
         if !self.port_exists(is_output, name) { return Err(()); }
-        // let _vol = serde_json::Number::from_f64(vol as f64);
-        // match _vol {
-            // Some(_vol) => {
-                match is_output {
-                    true => &mut self.outputs,
-                    false => &mut self.inputs,
-                }.get_mut(name).unwrap().vol = vol;
-                if let Some(mut hs) = self.mon_hooks
-                        .entry(if is_output {"output_vol".to_owned()} else {"input_vol".to_owned()})
-                        .or_insert(HashMap::new())
-                        .remove(name) {
+        match is_output {
+            true => &mut self.outputs,
+            false => &mut self.inputs,
+        }.get_mut(name).unwrap().vol = vol;
+        if let Some(mut hs) = self.mon_hooks
+                .entry(if is_output { "output_vol".to_owned() } else { "input_vol".to_owned() })
+                .or_insert(HashMap::new())
+                .remove(name) {
 
 
-                    // let msg = format!("{}", vol);
-                    for &mut (ref mut stream, ref log) in hs.iter_mut() {
-                        self.write_info_response(is_output, name, stream, log)
-                        // let _ = stream.write(msg.as_bytes());
-                        // let _ = stream.write(b"\n");
-                        // let _ = stream.flush();
-                    }
-                    hs.clear();
-                }
-                Ok(())
-            // },
-            // None => Err(()),
-        // }
-
+            // let msg = format!("{}", vol);
+            for &mut (ref mut stream, ref log) in hs.iter_mut() {
+                self.write_info_response(is_output, name, stream, log)
+                // let _ = stream.write(msg.as_bytes());
+                // let _ = stream.write(b"\n");
+                // let _ = stream.flush();
+            }
+            hs.clear();
+        }
+        Ok(())
     }
 
     pub fn port_exists(&self, is_output: bool, name: &String) -> bool {

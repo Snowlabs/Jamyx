@@ -478,7 +478,13 @@ impl Patchbay {
                                 let is_output = get_ptype(&ptype);
 
                                 let p_name = command.opts[2].clone();
-                                let val = command.opts[3].clone().parse().unwrap();
+                                let val = if command.opts[3].chars().nth(0).unwrap() == '+' ||
+                                             command.opts[3].chars().nth(0).unwrap() == '-' {
+                                    cfg.read().unwrap().mixer.get_vol(is_output, &p_name.clone()).unwrap()*100f32
+                                        + command.opts[3].clone().parse::<f32>().unwrap()
+                                } else {
+                                    command.opts[3].clone().parse().unwrap()
+                                };
                                 let ret = match &*what {
                                     "volule"|"vol"|"v" => cfg.write().unwrap().mixer.set_vol(is_output, &p_name.clone(), val),
                                     "balance"|"bal"|"b"|_ => cfg.write().unwrap().mixer.set_bal(is_output, &p_name.clone(), val),
