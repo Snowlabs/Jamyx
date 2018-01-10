@@ -478,10 +478,15 @@ impl Patchbay {
                                 let is_output = get_ptype(&ptype);
 
                                 let p_name = command.opts[2].clone();
-                                let val = if command.opts[3].chars().nth(0).unwrap() == '+' ||
-                                             command.opts[3].chars().nth(0).unwrap() == '-' {
+
+                                let val = if (command.opts[3].chars().nth(0).unwrap() == '+' ||
+                                              command.opts[3].chars().nth(0).unwrap() == '-')
+                                            &&
+                                            match &*what { "volume"|"vol"|"v" => true, _ => false } {
+
                                     cfg.read().unwrap().mixer.get_vol(is_output, &p_name.clone()).unwrap()*100f32
                                         + command.opts[3].clone().parse::<f32>().unwrap()
+
                                 } else {
                                     command.opts[3].clone().parse().unwrap()
                                 };
