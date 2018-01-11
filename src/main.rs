@@ -15,11 +15,10 @@ extern crate serde_json;
 extern crate jam;
 
 use std::io;
-use std::sync::{Mutex, Arc, RwLock};
+use std::sync::{Arc, RwLock};
 
 use slog::Drain;
 
-use clap::{Arg, App, SubCommand};
 
 mod config;
 mod jacon;
@@ -37,7 +36,7 @@ fn setup_log(verbosity: slog::Level) -> slog::Logger {
 }
 
 fn main() {
-    let VERSION = env!("CARGO_PKG_VERSION");
+    static VERSION: &str = env!("CARGO_PKG_VERSION");
     let cargs = clap_app!(Jamyx =>
         (version: VERSION)
         (author: "Javier A. Pollak")

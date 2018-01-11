@@ -7,8 +7,6 @@ use std::thread;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex, RwLock};
-use std::io::Write;
-use std::collections::{HashMap, HashSet};
 
 use serde_json;
 
@@ -249,7 +247,7 @@ impl ConnectionKit {
 
         let (_t_cmd, r_cmd) = channel();
         self.t_cmd = Some(_t_cmd.clone());
-        let t_cmd = _t_cmd.clone();
+        // let t_cmd = _t_cmd.clone();
         let cfg = self.cfg.clone();
         let log = self.log.clone();
         self.cmd_thread = Some(thread::spawn(move || {
@@ -266,12 +264,12 @@ impl ConnectionKit {
                             "tog" | _ => !cfg.read().unwrap().connections.is_connected(&iname, &oname),
                         };
 
-                        let msg = format!("{}connected `{}` and `{}`",
-                                          if connecting {""} else {"dis"}, iname, oname);
+                        // let msg = format!("{}connected `{}` and `{}`",
+                        //                   if connecting {""} else {"dis"}, iname, oname);
 
                         // Perform the (dis)connection
                         cfg.write().unwrap().connections.connect(connecting, &iname, &oname);
-                        t_sig.send(Signals::TryConnection(connecting, iname.clone(), oname.clone()));
+                        t_sig.send(Signals::TryConnection(connecting, iname.clone(), oname.clone())).unwrap();
 
                         server::write_response(&log, &server::Response {
                             ret: 0, msg: &format!("{}connection", if connecting {""} else {"dis"}), obj: json!({

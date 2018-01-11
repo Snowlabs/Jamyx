@@ -4,13 +4,11 @@ extern crate jack;
 
 use std;
 use std::thread;
-use std::sync::mpsc::{channel, Sender, Receiver};
+use std::sync::mpsc::{channel, Sender};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex, RwLock};
-use std::io::Write;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 
-use jam::JackClientUtils;
 use jack::prelude as j;
 
 use serde_json::Value;
@@ -18,7 +16,6 @@ use serde_json::Value;
 use config;
 use server;
 
-use utils::LogError;
 
 type AM<T> = Arc<Mutex<T>>;
 type AMAnyClient = AM<jam::AnyClient>;
@@ -85,7 +82,7 @@ impl Port {
         }
     }
 
-    pub fn copy_from(&mut self, other: &Self, vol: f32, balance: (f32, f32), ps: &j::ProcessScope, log: &slog::Logger) {
+    pub fn copy_from(&mut self, other: &Self, vol: f32, balance: (f32, f32), ps: &j::ProcessScope, _: &slog::Logger) {
         if !self.is_output { return; /* TODO: Panic here or something */ }
 
         if self.is_mono {
@@ -227,7 +224,7 @@ impl Patchbay {
         let outs = self.outputs.clone();
         let cfg = self.cfg.clone();
         let monitor_port = self.monitor_port.clone();
-        jclient.hook(jam::CB::process(Box::new(move |cli, scope| {
+        jclient.hook(jam::CB::process(Box::new(move |_, scope| {
             // debug!(log, "test: {:?}", cfg.lock().unwrap().mixer.outputs);
             // debug!(log, "PROC");
             let combine_balance = |a: (f32, f32), b: (f32, f32)| (a.0 * b.0, a.1 * b.1);
@@ -312,7 +309,7 @@ impl Patchbay {
 
 
                         // Perform the (dis)connection
-                        cfg.write().unwrap().mixer.connect(connecting, &oname, &iname);
+                        cfg.write().unwrap().mixer.connect(connecting, &oname, &iname).expect("(dis)connecting ports");
 
                         if cfg.read().unwrap().mixer.port_exists(true, &oname.to_string()) {
                             cfg.read().unwrap().mixer.write_info_response(

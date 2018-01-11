@@ -7,7 +7,6 @@ use std::error::Error;
 use std::io::Read;
 use std::collections::{HashMap, HashSet};
 use std::net::TcpStream;
-use std::io::Write;
 
 use utils::LogError;
 use utils::Connections;

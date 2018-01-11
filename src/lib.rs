@@ -6,7 +6,6 @@ extern crate libc;
 
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::AtomicBool;
 use std::mem;
 use std::thread;
 
@@ -83,6 +82,7 @@ macro_rules! def_cb_ret {
 }
 
 pub struct Notifications {
+    // TODO: use this logger!
     log: slog::Logger,
     hooks: Arc<Mutex<Vec<CB>>>,
 }
@@ -120,6 +120,7 @@ impl j::NotificationHandler for Notifications {
 }
 
 pub struct Process {
+    // TODO: use this logger!
     log: slog::Logger,
     hooks: Arc<Mutex<Vec<CB>>>,
 }
@@ -157,7 +158,7 @@ impl AnyClient {
         let cli = std::mem::replace(&mut *self, AnyClient::None);
         match cli {
             AnyClient::Inactive(c) => Ok(c),
-            AnyClient::Active(c) => Err(JamyxErr::ClientIsActive),
+            AnyClient::Active(_) => Err(JamyxErr::ClientIsActive),
             AnyClient::None => Err(JamyxErr::ClientIsNone)
         }
     }
@@ -212,12 +213,12 @@ unsafe impl j::PortSpec for AnySpec {
     fn jack_port_type(&self) -> &str {
         match self {
             &AnySpec::AudioIn => {
-                static ispec: j::AudioInSpec = j::AudioInSpec;
-                ispec.jack_port_type()
+                static ISPEC: j::AudioInSpec = j::AudioInSpec;
+                ISPEC.jack_port_type()
             },
             &AnySpec::AudioOut => {
-                static ospec: j::AudioOutSpec = j::AudioOutSpec;
-                ospec.jack_port_type()
+                static OSPEC: j::AudioOutSpec = j::AudioOutSpec;
+                OSPEC.jack_port_type()
             },
         }
     }
@@ -297,6 +298,7 @@ impl<'a> Deref for AnyAudioInPort<'a> {
     }
 }
 
+// FIXME: these names are non camel-cased!!!
 pub enum CB {
     thread_init(Box<Fn(&j::Client)+Send>),
     shutdown(Box<Fn(j::ClientStatus, &str)+Send>),
@@ -362,8 +364,9 @@ impl Client {
             warn!(logger, "Server shutdown! code: {:?}, reason: {}", cs, s);
             *do_recon.lock().unwrap() = true;
 
-            let mut old_cli = mem::replace(&mut *jcli.lock().unwrap(), AnyClient::None).to_active().unwrap();
-            unsafe { mem::forget(old_cli); }
+            let old_cli = mem::replace(&mut *jcli.lock().unwrap(), AnyClient::None).to_active().unwrap();
+            // TODO: double check this mem::forget
+            mem::forget(old_cli);
             // Still "recover" the notifications_handler
             // TODO: actually give the proper loggers to the new handlers here
             *not_han.lock().unwrap() = Some(Notifications::new(logger.clone(), hooks.clone()));
@@ -441,7 +444,8 @@ impl Client {
             &AnyClient::Active(_) => {
                 let active_client = mem::replace(&mut *jcli, AnyClient::None).to_active()?;
 
-                let (_jcli, not_han, proc_han) = active_client.deactivate()?;
+                // Third return is the process handler... i don't think we need it...
+                let (_jcli, not_han, _) = active_client.deactivate()?;
                 *jcli = AnyClient::Inactive(_jcli);
                 *self.notifications_handler.lock().unwrap() = Some(not_han);
                 Ok(())

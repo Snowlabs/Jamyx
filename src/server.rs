@@ -2,15 +2,13 @@ extern crate slog;
 extern crate serde;
 extern crate serde_json;
 
-use std;
-use std::sync::mpsc::{channel, Sender, Receiver};
-use std::net::{TcpListener, TcpStream, SocketAddr};
+use std::sync::mpsc::{Sender};
+use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::io::{Read, Write};
 
 use std::error::Error;
 use utils::LogError;
-use jacon;
 
 #[derive(Serialize)]
 pub struct Response<'a> {
@@ -72,15 +70,14 @@ fn handle_client(log: slog::Logger, mut stream: TcpStream, sender: CmdSender) {
     let peer_addr = stream.peer_addr().unwrap();
     info!(log, "New connection from: {}", peer_addr);
 
-    let mut do_loop = true;
-    while do_loop {
+    loop {
         let mut ibuff = [0; 256];
         // let mut obuff = [0; 256];
         let _ = stream.read(&mut ibuff).log_err(&log);
 
         let mut ibuff = ibuff.to_vec();
         ibuff.retain(|&b| b != 0);
-        let mut ibuff = String::from_utf8_lossy(ibuff.as_slice());
+        let ibuff = String::from_utf8_lossy(ibuff.as_slice());
 
         debug!(log, "RECVD: {}", ibuff);
         let cmd: Result<Command, serde_json::error::Error> = serde_json::from_str(&ibuff);
