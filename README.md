@@ -54,24 +54,41 @@ Some key features include:
 Interprocess communication is done via a TCP connection to the Jamyx server (default port: `56065`). The messages are formatted in Json as follows:
 
 ### Format
+*(using python syntax highlighting in readme for better comment support)*
+
 **Command**
-```json
+```python
 {
-    "target": "<TARGET>",      One of "myx" and "con" for targetting
-                                the mixer and the patchbay respectively
-    "cmd":    "<COMMAND>",     One of the later described commands
-    "opts":   ["<OPTIONS>"]    The options for the chosen command
+    "target": "<TARGET>",       One of "myx" and "con" for targetting
+                                 the mixer and the patchbay respectively
+    "cmd":    "<COMMAND>",      One of the later described commands
+    "opts":   ["<OPTIONS>"]     The options for the chosen command
 }
 ```
 
 **Reply**
-```json
+```python
 {
-    "ret": <RETURN CODE>        The return code of the command (0 = good)
-    "msg": <MESSAGE>            Short description of return object or error
+    "ret": <RETURN CODE>,       The return code of the command (0 = good)
+    "msg": <MESSAGE>,           Short description of return object or error
     "obj": <RETURN OBJECT TREE> Object tree caintaining information
                                  returned by the command
                                  (described in seperate command descs.)
+}
+```
+
+### Port Object
+A common reply object returned by commands is a Port Object:
+```python
+{
+    "port":   <str>,            The name of the port
+    "ptype":  <"out" | "in">,   The port type
+    "vol":    <float>,          The volume multiplier (in percentage) of the port
+    "bal":    <float>,          The balance of the port
+    "ismono": <bool>,           Whether the port is mono or not
+    "cons":   <list of str>     List containing names of all the
+                                 connected ports to this one
+
 }
 ```
 
@@ -145,5 +162,6 @@ Set the value of a certain property
 **Return object**
 
 This command returns [port object][1] of the specified port.
+
 
 [1]: #port-object
