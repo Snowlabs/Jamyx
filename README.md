@@ -3,6 +3,9 @@
 ***
 
 <p align="center">
+|
+<b><a href="#clients">Clients</a></b>
+|
 <b><a href="#usage">Usage</a></b>
 |
 <b><a href="#installation">Installation</a></b>
@@ -22,6 +25,12 @@ Jamyx is meant to be an easy to use alternative to qjackctl.
 ### Jamyx is a daemon
 
 Because Jamyx is a server and requires no windows manager or graphics to run. This means that even if you restart your X server, the Jamyx server daemon will keep running independently. Why should your audio setup depend on your window manager? This is also why Jamyx is called `Jamyx` and not `qJamyx` of `Jamyx-gtk`. If you want a graphical front-end to Jamyx, you can download a separate client or even make your own!
+
+#### Clients
+I have already written some clients for Jamyx:
+  - [Jmctl](https://github.com/Snowlabs/Jmctl): A powerful yet simple client for the Jamyxer server written in go 
+  - [Jamyxui](https://github.com/Snowlabs/Jamyxui): Graphical client for the Jamyx server written in Go
+  - [Jamyxgo](https://github.com/Snowlabs/Jamyxgo): Jamyx client library written in Go (the lib that the above clients use)
 
 ### Jamyx has more features
 
