@@ -1,12 +1,19 @@
 {
     "connections": {
+        "system:capture_2": ["Jacon:Mic M"],
         "system:capture_1": ["Jacon:Mic M"],
 
         "python2:out_jackaudiosink0_1": ["Jacon:MPD L"],
         "python2:out_jackaudiosink0_2": ["Jacon:MPD R"],
+        "Mopidy:out_jackaudiosink0_1": ["Jacon:MPD L"],
+        "Mopidy:out_jackaudiosink0_2": ["Jacon:MPD R"],
 
         "PulseAudio JACK Sink:front-left":  ["Jacon:PulseSink L"],
         "PulseAudio JACK Sink:front-right": ["Jacon:PulseSink R"],
+        "alsoft:channel_1": ["Jacon:PulseSink L"],
+        "alsoft:channel_2": ["Jacon:PulseSink R"],
+        "alsa-jack.jackP.18337.1:out_000": ["Jacon:PulseSink L"],
+        "alsa-jack.jackP.18337.1:out_001": ["Jacon:PulseSink R"],
 
         "Jacon:PUBLIC L": ["PulseAudio JACK Source:front-left"],
         "Jacon:PUBLIC R": ["PulseAudio JACK Source:front-right"],

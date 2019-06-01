@@ -3,24 +3,21 @@ extern crate jam;
 extern crate slog;
 
 use std;
-use std::thread;
-use std::sync::mpsc::{channel, Sender, Receiver};
 use std::net::TcpStream;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
 
 use serde_json;
 
-use jack::prelude as j;
+use jack as j;
 use jam::JackClientUtils;
 
 use config;
 use server;
 
-use utils::LogError;
 use utils::Connections;
-
-
-
+use utils::LogError;
 
 #[derive(Debug)]
 pub enum Signals {
@@ -33,7 +30,6 @@ pub enum Signals {
     TryConnection(bool, String, String),
 
     ReconnectPort(String),
-
     // Connect(String, String, bool),
 }
 
@@ -50,16 +46,19 @@ trait RetryConnection {
     fn retry_if_fail_in(&self, u64, Signals, &Sender<Signals>);
 }
 
-impl RetryConnection for Result<(), j::JackErr> {
+impl RetryConnection for Result<(), j::Error> {
     fn retry_if_fail_in(&self, delay: u64, sig: Signals, t_sig: &Sender<Signals>) {
-        if let &Err(ref e) = self { match e {
-                &j::JackErr::PortConnectionError(_,_) => {
+        if let &Err(ref e) = self {
+            match e {
+                &j::Error::PortConnectionError(_, _) => {
                     t_sig.send(Signals::RetryIn(delay, Box::new(sig))).unwrap();
                 }
-                &j::JackErr::PortDisconnectionError => {
+                &j::Error::PortDisconnectionError => {
                     // t_sig.send(Signals::RetryIn(delay, Box::new(sig)));
-                }, _ => ()
-        } }
+                }
+                _ => (),
+            }
+        }
     }
 }
 
@@ -109,57 +108,68 @@ impl ConnectionKit {
 
         // Hook ports_connected
         let t_sig = _t_sig.clone();
-        jclient.hook(jam::CB::ports_connected(
-            Box::new(move |c, o, i, connected| {
+        jclient.hook(jam::CB::ports_connected(Box::new(
+            move |c, o, i, connected| {
                 let oname = c.port_name_by_id(o).unwrap(); // out
                 let iname = c.port_name_by_id(i).unwrap(); // in
 
-                t_sig.send(Signals::CheckConection(oname, iname, connected)).unwrap();
-            })
-        ));
+                t_sig
+                    .send(Signals::CheckConection(oname, iname, connected))
+                    .unwrap();
+            },
+        )));
 
         // Hook port_registration
         let t_sig = _t_sig.clone();
         let log = self.log.clone();
-        jclient.hook(jam::CB::port_registration(
-            Box::new(move |c, p, of| {
-                let pname = c.port_name_by_id(p).unwrap();
-                info!(log, "Port {}registered: `{}`", if of {""} else {"un"}, pname);
-                if of {
-                    t_sig.send(Signals::ReconnectPort(pname)).unwrap();
-                }
-            })
-        ));
+        jclient.hook(jam::CB::port_registration(Box::new(move |c, p, of| {
+            let pname = c.port_name_by_id(p).unwrap();
+            info!(
+                log,
+                "Port {}registered: `{}`",
+                if of { "" } else { "un" },
+                pname
+            );
+            if of {
+                t_sig.send(Signals::ReconnectPort(pname)).unwrap();
+            }
+        })));
 
         // Hook client_reconnection
         let t_sig = _t_sig.clone();
-        jclient.hook(jam::CB::client_reconnection(
-            Box::new(move || {
-                t_sig.send(Signals::DisconnectAll).unwrap();
-                t_sig.send(Signals::ReconnectGood).unwrap();
-            })
-        ));
-
+        jclient.hook(jam::CB::client_reconnection(Box::new(move || {
+            t_sig.send(Signals::DisconnectAll).unwrap();
+            t_sig.send(Signals::ReconnectGood).unwrap();
+        })));
     }
 
-    fn sig_loop(sigs: (Sender<Signals>, Receiver<Signals>), log: slog::Logger, cli: AMAnyClient, config: Arc<RwLock<config::Config>>) {
+    fn sig_loop(
+        sigs: (Sender<Signals>, Receiver<Signals>),
+        log: slog::Logger,
+        cli: AMAnyClient,
+        config: Arc<RwLock<config::Config>>,
+    ) {
         let (t_sig, r_sig) = sigs;
         let mut disable_check_connections = false;
         loop {
             let sig = r_sig.recv().unwrap();
             match sig {
                 Signals::ReconnectPort(port_name) => {
-                    info!(log, "Reevaluating connections for port: `{}`",
-                          port_name);
+                    info!(log, "Reevaluating connections for port: `{}`", port_name);
                     as_inactive!(cli, log, {
                         let port = cli.port_by_name(&port_name).unwrap();
-                        let is_input = port.flags().contains(j::port_flags::IS_INPUT);
-                        port.disconnect().unwrap();
-                        for (oo, iis) in &config.read().unwrap().connections { for ii in iis {
-                            if (is_input && ii == &port_name) || (!is_input && oo == &port_name) {
-                                t_sig.send(Signals::TryConnection(true, oo.clone(), ii.clone())).unwrap();
+                        let is_input = port.flags().contains(j::PortFlags::IS_INPUT);
+                        cli.disconnect(&port).unwrap();
+                        for (oo, iis) in &config.read().unwrap().connections {
+                            for ii in iis {
+                                if (is_input && ii == &port_name) || (!is_input && oo == &port_name)
+                                {
+                                    t_sig
+                                        .send(Signals::TryConnection(true, oo.clone(), ii.clone()))
+                                        .unwrap();
+                                }
                             }
-                        } }
+                        }
                     });
                 }
                 Signals::RetryIn(delay, sig) => {
@@ -172,27 +182,46 @@ impl ConnectionKit {
                     });
                 }
                 Signals::TryConnection(of, oname, iname) => {
-                    debug!(log, "Trying {}connection: `{}` and `{}`",
-                           if of {""} else {"dis"}, oname, iname);
+                    debug!(
+                        log,
+                        "Trying {}connection: `{}` and `{}`",
+                        if of { "" } else { "dis" },
+                        oname,
+                        iname
+                    );
                     as_inactive!(cli, log, {
-                        if cli.ports(Some(&iname), None, j::port_flags::IS_INPUT).len() == 1 &&
-                            cli.ports(Some(&oname), None, j::port_flags::IS_OUTPUT).len() == 1 {
-                            cli
-                                .connect_ports_by_name_if(&of, &oname, &iname)
+                        if cli.ports(Some(&iname), None, j::PortFlags::IS_INPUT).len() == 1
+                            && cli
+                                .ports(Some(&oname), None, j::PortFlags::IS_OUTPUT)
+                                .len()
+                                == 1
+                        {
+                            cli.connect_ports_by_name_if(&of, &oname, &iname)
                                 .log_err(&log)
-                                .map_err(|e| { warn!(log, "FAILED! Rescheduling!"); e })
-                                .retry_if_fail_in(100, Signals::TryConnection(of, oname, iname), &t_sig);
+                                .map_err(|e| {
+                                    warn!(log, "FAILED! Rescheduling!");
+                                    e
+                                }).retry_if_fail_in(
+                                    100,
+                                    Signals::TryConnection(of, oname, iname),
+                                    &t_sig,
+                                );
                         } else {
-                            debug!(log, "One or both of ports: `{}` and `{}` does not exist!", oname, iname);
+                            warn!(
+                                log,
+                                "One or both of ports: `{}` and `{}` does not exist!", oname, iname
+                            );
                         }
-
                     });
-
                 }
                 Signals::SetConnectionCheck(of) => {
-                    debug!(log, "=> {}abling connection check", if of {"en"} else {"dis"});
+                    debug!(
+                        log,
+                        "=> {}abling connection check",
+                        if of { "en" } else { "dis" }
+                    );
                     disable_check_connections = !of;
-                },
+                }
                 Signals::CheckConection(oname, iname, connected) => {
                     if disable_check_connections {
                         debug!(log, "Skipping connection checks");
@@ -205,15 +234,28 @@ impl ConnectionKit {
                             }
                         }
 
-                        let stat = if is_fine {"GOOD"} else {"BAD"};
+                        let stat = if is_fine { "GOOD" } else { "BAD" };
                         let log = log.new(o!("stat" => stat));
-                        info!(log, "Ports {}connected: `{}` and `{}`", if connected {""} else {"dis"}, oname, iname);
+                        info!(
+                            log,
+                            "Ports {}connected: `{}` and `{}`",
+                            if connected { "" } else { "dis" },
+                            oname,
+                            iname
+                        );
                         debug!(log, "{}: ", stat);
                         if !is_fine {
                             let connecting = !connected;
-                            debug!(log, "Scheduling try {}connection: `{}` and `{}`",
-                                   if connecting {""} else {"dis"}, oname, iname);
-                            t_sig.send(Signals::TryConnection(connecting, oname, iname)).unwrap();
+                            debug!(
+                                log,
+                                "Scheduling try {}connection: `{}` and `{}`",
+                                if connecting { "" } else { "dis" },
+                                oname,
+                                iname
+                            );
+                            t_sig
+                                .send(Signals::TryConnection(connecting, oname, iname))
+                                .unwrap();
                         } else {
                             debug!(log, "Doing nothing");
                         }
@@ -221,16 +263,20 @@ impl ConnectionKit {
                 }
                 Signals::ReconnectGood => {
                     info!(log, "Reconnecting all good");
-                    for (oo, iis) in &config.read().unwrap().connections { for ii in iis {
-                            t_sig.send(Signals::TryConnection(true, oo.clone(), ii.clone())).unwrap();
-                    } }
+                    for (oo, iis) in &config.read().unwrap().connections {
+                        for ii in iis {
+                            t_sig
+                                .send(Signals::TryConnection(true, oo.clone(), ii.clone()))
+                                .unwrap();
+                        }
+                    }
                 }
                 Signals::DisconnectAll => {
                     info!(log, "Disconnecting all");
                     t_sig.send(Signals::SetConnectionCheck(false)).unwrap();
                     as_inactive!(cli, log, {
-                        for ii in cli.ports(None, None, j::port_flags::IS_INPUT) {
-                            cli.port_by_name(&ii).unwrap().disconnect().unwrap();
+                        for ii in cli.ports(None, None, j::PortFlags::IS_INPUT) {
+                            cli.disconnect(&cli.port_by_name(&ii).unwrap()).unwrap();
                         }
                     });
                     t_sig.send(Signals::SetConnectionCheck(true)).unwrap();
@@ -261,22 +307,38 @@ impl ConnectionKit {
                         let connecting = match command.cmd.as_str() {
                             "con" => true,
                             "dis" => false,
-                            "tog" | _ => !cfg.read().unwrap().connections.is_connected(&iname, &oname),
+                            "tog" | _ => {
+                                !cfg.read().unwrap().connections.is_connected(&iname, &oname)
+                            }
                         };
 
                         // let msg = format!("{}connected `{}` and `{}`",
                         //                   if connecting {""} else {"dis"}, iname, oname);
 
                         // Perform the (dis)connection
-                        cfg.write().unwrap().connections.connect(connecting, &iname, &oname);
-                        t_sig.send(Signals::TryConnection(connecting, iname.clone(), oname.clone())).unwrap();
+                        cfg.write()
+                            .unwrap()
+                            .connections
+                            .connect(connecting, &iname, &oname);
+                        t_sig
+                            .send(Signals::TryConnection(
+                                connecting,
+                                iname.clone(),
+                                oname.clone(),
+                            )).unwrap();
 
-                        server::write_response(&log, &server::Response {
-                            ret: 0, msg: &format!("{}connection", if connecting {""} else {"dis"}), obj: json!({
+                        server::write_response(
+                            &log,
+                            &server::Response {
+                                ret: 0,
+                                msg: &format!("{}connection", if connecting { "" } else { "dis" }),
+                                obj: json!({
                                 "output_name": &oname,
                                 "input_name": &iname,
-                            })
-                        }, &mut stream);
+                            }),
+                            },
+                            &mut stream,
+                        );
                         drop(stream)
                         // let _ = stream.write(msg.as_bytes());
                         // let _ = stream.write(b"\n");
@@ -286,8 +348,13 @@ impl ConnectionKit {
                     _ => {
                         server::write_response(
                             &log,
-                            &server::Response { ret: 1, msg: "Bad command!", obj: serde_json::Value::Null, },
-                            &mut stream);
+                            &server::Response {
+                                ret: 1,
+                                msg: "Bad command!",
+                                obj: serde_json::Value::Null,
+                            },
+                            &mut stream,
+                        );
                         drop(stream);
                         // let msg = format!("Bad command: `{}`", command.cmd);
                         // let _ = stream.write(msg.as_bytes());
@@ -300,4 +367,3 @@ impl ConnectionKit {
         }));
     }
 }
-

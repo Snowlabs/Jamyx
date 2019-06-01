@@ -3,13 +3,13 @@ extern crate serde_json;
 extern crate slog;
 
 use std;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::io::Read;
-use std::collections::{HashMap, HashSet};
 use std::net::TcpStream;
 
-use utils::LogError;
 use utils::Connections;
+use utils::LogError;
 
 use server;
 
@@ -24,20 +24,32 @@ pub struct PortConfig {
 }
 
 impl PortConfig {
-    fn default_vol() -> f32 { 100.0 as f32 }
-    fn default_bal() -> f32 { 0.0 as f32 }
-    fn default_mono() -> bool { false }
+    fn default_vol() -> f32 {
+        100.0 as f32
+    }
+    fn default_bal() -> f32 {
+        0.0 as f32
+    }
+    fn default_mono() -> bool {
+        false
+    }
 
-    pub fn get_vol(&self) -> f32 { self.vol / 100.0 }
+    pub fn get_vol(&self) -> f32 {
+        self.vol / 100.0
+    }
 
-    pub fn get_balance(&self) -> f32 { self.balance }
+    pub fn get_balance(&self) -> f32 {
+        self.balance
+    }
 
     pub fn get_balance_pair(&self) -> (f32, f32) {
         let b = self.get_balance();
-        (b+1.0, -b+1.0)
+        (b + 1.0, -b + 1.0)
     }
 
-    pub fn is_mono(&self) -> bool { self.mono }
+    pub fn is_mono(&self) -> bool {
+        self.mono
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,10 +74,14 @@ pub struct MixerConfig {
 }
 
 impl MixerConfig {
-    pub fn get_default_hooks() -> HashMap<String, HashMap<String, Vec<(TcpStream, slog::Logger)>>>{ HashMap::new() }
+    pub fn get_default_hooks() -> HashMap<String, HashMap<String, Vec<(TcpStream, slog::Logger)>>> {
+        HashMap::new()
+    }
 
     pub fn get_port_info(&self, is_output: bool, name: &String) -> Result<serde_json::Value, ()> {
-        if !self.port_exists(is_output, name) { return Err(()); }
+        if !self.port_exists(is_output, name) {
+            return Err(());
+        }
 
         Ok(json!({
             "port":   &*name,
@@ -77,20 +93,36 @@ impl MixerConfig {
         }))
     }
 
-    pub fn write_info_response(&self, is_output: bool, name: &String, stream: &mut TcpStream, log: &slog::Logger,) {
-        server::write_response(&log, &server::Response {
-            ret: 0, msg: &format!("{} info", name), obj: self.get_port_info(is_output, name).unwrap()
-        }, stream);
+    pub fn write_info_response(
+        &self,
+        is_output: bool,
+        name: &String,
+        stream: &mut TcpStream,
+        log: &slog::Logger,
+    ) {
+        server::write_response(
+            &log,
+            &server::Response {
+                ret: 0,
+                msg: &format!("{} info", name),
+                obj: self.get_port_info(is_output, name).unwrap(),
+            },
+            stream,
+        );
     }
 
     pub fn get_mono(&self, is_output: bool, name: &String) -> Result<bool, ()> {
-        if !self.port_exists(is_output, name) { return Err(()); }
+        if !self.port_exists(is_output, name) {
+            return Err(());
+        }
 
         Ok(if is_output {
             &self.outputs
         } else {
             &self.inputs
-        }.get(name).unwrap().is_mono())
+        }.get(name)
+        .unwrap()
+        .is_mono())
     }
 
     pub fn get_vol(&self, is_output: bool, name: &String) -> Result<f32, ()> {
@@ -108,17 +140,24 @@ impl MixerConfig {
     }
 
     pub fn set_vol(&mut self, is_output: bool, name: &String, vol: f32) -> Result<(), ()> {
-        if !self.port_exists(is_output, name) { return Err(()); }
+        if !self.port_exists(is_output, name) {
+            return Err(());
+        }
         match is_output {
             true => &mut self.outputs,
             false => &mut self.inputs,
-        }.get_mut(name).unwrap().vol = vol;
-        if let Some(mut hs) = self.mon_hooks
-                .entry(if is_output { "output_vol".to_owned() } else { "input_vol".to_owned() })
-                .or_insert(HashMap::new())
-                .remove(name) {
-
-
+        }.get_mut(name)
+        .unwrap()
+        .vol = vol;
+        if let Some(mut hs) = self
+            .mon_hooks
+            .entry(if is_output {
+                "output_vol".to_owned()
+            } else {
+                "input_vol".to_owned()
+            }).or_insert(HashMap::new())
+            .remove(name)
+        {
             // let msg = format!("{}", vol);
             for &mut (ref mut stream, ref log) in hs.iter_mut() {
                 self.write_info_response(is_output, name, stream, log)
@@ -140,7 +179,9 @@ impl MixerConfig {
     }
 
     pub fn get_connected(&self, is_output: bool, name: &String) -> Result<HashSet<String>, ()> {
-        if !self.port_exists(is_output, name) { return Err(()); }
+        if !self.port_exists(is_output, name) {
+            return Err(());
+        }
 
         if is_output {
             match self.connections.get(name) {
@@ -169,18 +210,22 @@ impl MixerConfig {
 
     pub fn connect(&mut self, connecting: bool, oname: &str, iname: &str) -> Result<(), ()> {
         self.connections.connect(connecting, oname, iname);
-        if let Some(hs) = self.mon_hooks
-                .entry("output_con".to_owned())
-                .or_insert(HashMap::new())
-                .get_mut(oname) {
-
+        if let Some(hs) = self
+            .mon_hooks
+            .entry("output_con".to_owned())
+            .or_insert(HashMap::new())
+            .get_mut(oname)
+        {
             // let msg = format!("{}connection to: {}",
             //                   if connecting {""} else {"dis"}, iname);
             let response = server::Response {
-                ret: 0, msg: &format!("{}connection", if connecting {""} else {"dis"}), obj: json!({
+                ret: 0,
+                msg: &format!("{}connection", if connecting { "" } else { "dis" }),
+                obj: json!({
                     "output_name": oname,
                     "input_name": iname,
-                }) };
+                }),
+            };
 
             for &mut (ref mut stream, ref log) in hs.iter_mut() {
                 server::write_response(log, &response, stream);
@@ -192,16 +237,20 @@ impl MixerConfig {
             // }
             hs.clear();
         }
-        if let Some(hs) = self.mon_hooks
-                .entry("input_con".to_owned())
-                .or_insert(HashMap::new())
-                .get_mut(iname) {
-
+        if let Some(hs) = self
+            .mon_hooks
+            .entry("input_con".to_owned())
+            .or_insert(HashMap::new())
+            .get_mut(iname)
+        {
             let response = server::Response {
-                ret: 0, msg: &format!("{}connection", if connecting {""} else {"dis"}), obj: json!({
+                ret: 0,
+                msg: &format!("{}connection", if connecting { "" } else { "dis" }),
+                obj: json!({
                     "output_name": oname,
                     "input_name": iname,
-                }) };
+                }),
+            };
 
             for &mut (ref mut stream, ref log) in hs.iter_mut() {
                 server::write_response(log, &response, stream);
@@ -223,17 +272,25 @@ impl MixerConfig {
     }
 
     pub fn set_bal(&mut self, is_output: bool, pname: &String, balance: f32) -> Result<(), ()> {
-        if !self.port_exists(is_output, &pname) { return Err(()); }
+        if !self.port_exists(is_output, &pname) {
+            return Err(());
+        }
         // let _bal = serde_json::Number::from_f64(balance as f64).unwrap();
         match is_output {
             true => &mut self.outputs,
             false => &mut self.inputs,
-        }.get_mut(pname).unwrap().balance = balance;
-        if let Some(mut hs) = self.mon_hooks
-                .entry(if is_output {"output_bal".to_owned()} else {"input_bal".to_owned()})
-                .or_insert(HashMap::new())
-                .remove(pname) {
-
+        }.get_mut(pname)
+        .unwrap()
+        .balance = balance;
+        if let Some(mut hs) = self
+            .mon_hooks
+            .entry(if is_output {
+                "output_bal".to_owned()
+            } else {
+                "input_bal".to_owned()
+            }).or_insert(HashMap::new())
+            .remove(pname)
+        {
             for &mut (ref mut stream, ref log) in hs.iter_mut() {
                 self.write_info_response(is_output, pname, stream, log)
             }
@@ -259,17 +316,19 @@ impl MixerConfig {
     }
 
     pub fn get_bal_pair(&self, is_output: bool, name: &String) -> Result<(f32, f32), ()> {
-            match match is_output {
-                true => self.outputs.get(name),
-                false => self.inputs.get(name),
-            } {
-                Some(p) => Ok(p.get_balance_pair()),
-                None => Err(()),
-            }
+        match match is_output {
+            true => self.outputs.get(name),
+            false => self.inputs.get(name),
+        } {
+            Some(p) => Ok(p.get_balance_pair()),
+            None => Err(()),
+        }
     }
 
     pub fn set_mon(&mut self, is_output: bool, name: &String) -> Result<(), ()> {
-        if !self.port_exists(is_output, name) { return Err(()); }
+        if !self.port_exists(is_output, name) {
+            return Err(());
+        }
         self.monitor.channel = name.to_owned();
         self.monitor.is_input = !is_output;
         Ok(())
@@ -288,15 +347,25 @@ pub fn parse(path: &str, logger: slog::Logger) -> Config {
 
     let mut file = match std::fs::File::open(&path) {
         Err(why) => {
-            crit!(logger, "couldn't open {}: {}", path.display(), why.description());
+            crit!(
+                logger,
+                "couldn't open {}: {}",
+                path.display(),
+                why.description()
+            );
             panic!();
-        },
+        }
         Ok(file) => file,
     };
 
     let mut s = String::new();
     if let Err(why) = file.read_to_string(&mut s) {
-        crit!(logger, "couldn't read {}: {}", path.display(), why.description());
+        crit!(
+            logger,
+            "couldn't read {}: {}",
+            path.display(),
+            why.description()
+        );
         panic!();
     }
 

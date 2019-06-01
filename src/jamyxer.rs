@@ -1,25 +1,23 @@
+extern crate jack;
 extern crate jam;
 extern crate slog;
-extern crate jack;
 
 use std;
-use std::thread;
-use std::sync::mpsc::{channel, Sender};
+use std::collections::HashMap;
 use std::net::TcpStream;
+use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex, RwLock};
-use std::collections::{HashMap};
+use std::thread;
 
-use jack::prelude as j;
+use jack as j;
 
 use serde_json::Value;
 
 use config;
 use server;
 
-
 type AM<T> = Arc<Mutex<T>>;
 type AMAnyClient = AM<jam::AnyClient>;
-
 
 pub struct Port {
     is_mono: bool,
@@ -30,7 +28,11 @@ pub struct Port {
 impl Port {
     pub fn register(name: &str, output: bool, mono: bool, cli: &jam::AnyClient) -> Self {
         let mut ports = HashMap::new();
-        let spec = if output { jam::AnySpec::AudioOut } else { jam::AnySpec::AudioIn };
+        let spec = if output {
+            jam::AnySpec::AudioOut
+        } else {
+            jam::AnySpec::AudioIn
+        };
 
         if mono {
             let pn = format!("{} M", name);
@@ -39,8 +41,16 @@ impl Port {
         } else {
             let pnl = format!("{} L", name);
             let pnr = format!("{} R", name);
-            let portl = cli.as_inactive().unwrap().register_port(&pnl, spec).unwrap();
-            let portr = cli.as_inactive().unwrap().register_port(&pnr, spec).unwrap();
+            let portl = cli
+                .as_inactive()
+                .unwrap()
+                .register_port(&pnl, spec)
+                .unwrap();
+            let portr = cli
+                .as_inactive()
+                .unwrap()
+                .register_port(&pnr, spec)
+                .unwrap();
             ports.insert("L".to_string(), portl);
             ports.insert("R".to_string(), portr);
         }
@@ -60,52 +70,69 @@ impl Port {
     }
 
     pub fn zero(&mut self, ps: &j::ProcessScope) {
-        if !self.is_output { return; /* TODO: Panic here or something */ }
+        if !self.is_output {
+            return; /* TODO: Panic here or something */
+        }
         match self.is_mono {
             true => {
                 let ref mut port = self.ports.get_mut("M").unwrap();
                 let mut oport = jam::AnyAudioOutPort::new(port, ps);
-                for e in oport.iter_mut() { *e = 0.0 as f32; }
+                for e in oport.iter_mut() {
+                    *e = 0.0 as f32;
+                }
             }
             false => {
                 {
                     let ref mut port_l = self.ports.get_mut("L").unwrap();
                     let mut oport_l = jam::AnyAudioOutPort::new(port_l, ps);
-                    for e in oport_l.iter_mut() { *e = 0.0 as f32; }
+                    for e in oport_l.iter_mut() {
+                        *e = 0.0 as f32;
+                    }
                 }
                 {
                     let ref mut port_r = self.ports.get_mut("R").unwrap();
                     let mut oport_r = jam::AnyAudioOutPort::new(port_r, ps);
-                    for e in oport_r.iter_mut() { *e = 0.0 as f32; }
+                    for e in oport_r.iter_mut() {
+                        *e = 0.0 as f32;
+                    }
                 }
             }
         }
     }
 
-    pub fn copy_from(&mut self, other: &Self, vol: f32, balance: (f32, f32), ps: &j::ProcessScope, _: &slog::Logger) {
-        if !self.is_output { return; /* TODO: Panic here or something */ }
+    pub fn copy_from(
+        &mut self,
+        other: &Self,
+        vol: f32,
+        balance: (f32, f32),
+        ps: &j::ProcessScope,
+        _: &slog::Logger,
+    ) {
+        if !self.is_output {
+            return; /* TODO: Panic here or something */
+        }
 
         if self.is_mono {
-                let ref mut port = self.ports.get_mut("M").unwrap();
-                let mut oport = jam::AnyAudioOutPort::new(port, ps);
-                if other.is_mono {
-                    // === MONO TO MONO ===
-                    let other_p = jam::AnyAudioInPort::new(&other.ports["M"], ps);
-                    // oport.clone_from_slice(&other_p);
-                    for (i, e) in oport.iter_mut().enumerate() {
-                        *e += other_p[i] * vol;
-                    }
-                } else {
-                    // === STEREO TO MONO ===
-                    let other_p_l = jam::AnyAudioInPort::new(&other.ports["L"], ps);
-                    let other_p_r = jam::AnyAudioInPort::new(&other.ports["R"], ps);
-                    // oport.clone_from_slice(&other_p_l);
-                    for (i, e) in oport.iter_mut().enumerate() {
-                        *e += other_p_l[i] * vol;
-                    }
-                    for (i, e) in oport.iter_mut().enumerate() {
-                        *e += other_p_r[i] * vol; // Multiply???
-                    }
+            let ref mut port = self.ports.get_mut("M").unwrap();
+            let mut oport = jam::AnyAudioOutPort::new(port, ps);
+            if other.is_mono {
+                // === MONO TO MONO ===
+                let other_p = jam::AnyAudioInPort::new(&other.ports["M"], ps);
+                // oport.clone_from_slice(&other_p);
+                for (i, e) in oport.iter_mut().enumerate() {
+                    *e += other_p[i] * vol;
+                }
+            } else {
+                // === STEREO TO MONO ===
+                let other_p_l = jam::AnyAudioInPort::new(&other.ports["L"], ps);
+                let other_p_r = jam::AnyAudioInPort::new(&other.ports["R"], ps);
+                // oport.clone_from_slice(&other_p_l);
+                for (i, e) in oport.iter_mut().enumerate() {
+                    *e += other_p_l[i] * vol;
+                }
+                for (i, e) in oport.iter_mut().enumerate() {
+                    *e += other_p_r[i] * vol; // Multiply???
+                }
             }
         } else {
             // to left channel
@@ -152,7 +179,6 @@ impl Port {
     }
 }
 
-
 pub struct Patchbay {
     log: slog::Logger,
     cli: AMAnyClient,
@@ -196,19 +222,23 @@ impl Patchbay {
             for (ref name, ref config) in &cfg.read().unwrap().mixer.inputs {
                 ins.lock().unwrap().insert(
                     name.clone().to_owned(),
-                    Port::register_input(&name, config.is_mono(), &cli.lock().unwrap())
-                    );
+                    Port::register_input(&name, config.is_mono(), &cli.lock().unwrap()),
+                );
                 ios.lock().unwrap().insert(
                     name.clone().to_owned(),
-                    Port::register_output(&format!("{} Out", name), config.is_mono(), &cli.lock().unwrap())
-                    );
+                    Port::register_output(
+                        &format!("{} Out", name),
+                        config.is_mono(),
+                        &cli.lock().unwrap(),
+                    ),
+                );
             }
 
             for (ref name, ref config) in &cfg.read().unwrap().mixer.outputs {
                 outs.lock().unwrap().insert(
                     name.clone().to_owned(),
-                    Port::register_output(&name, config.is_mono(), &cli.lock().unwrap())
-                    );
+                    Port::register_output(&name, config.is_mono(), &cli.lock().unwrap()),
+                );
             }
 
             let monitor_port = Port::register_output("MONITOR", false, &cli.lock().unwrap());
@@ -237,7 +267,8 @@ impl Patchbay {
                     config.get_vol() as f32,
                     config.get_balance_pair(),
                     &scope,
-                    &log);
+                    &log,
+                );
             }
 
             for (ref o, ref is) in &cfg.read().unwrap().mixer.connections {
@@ -247,15 +278,15 @@ impl Patchbay {
 
                     outs.lock().unwrap().get_mut(*o).unwrap().copy_from(
                         &ins.lock().unwrap()[*i],
-                        cfg.mixer.inputs[*i].get_vol() as f32 *
-                        cfg.mixer.outputs[*o].get_vol() as f32,
-
+                        cfg.mixer.inputs[*i].get_vol() as f32
+                            * cfg.mixer.outputs[*o].get_vol() as f32,
                         combine_balance(
                             cfg.mixer.inputs[*i].get_balance_pair(),
-                            cfg.mixer.outputs[*o].get_balance_pair()
+                            cfg.mixer.outputs[*o].get_balance_pair(),
                         ),
                         &scope,
-                        &log);
+                        &log,
+                    );
                 }
             }
 
@@ -270,14 +301,23 @@ impl Patchbay {
                 // debug!(log, "copying mon... {} to monitor port", moned_port_name);
                 monitor_port.lock().unwrap().as_mut().unwrap().zero(&scope);
                 monitor_port.lock().unwrap().as_mut().unwrap().copy_from(
-                        moned_port,
-                        cfg.read().unwrap().mixer.get_vol(is_output, moned_port_name).unwrap(),
-                        cfg.read().unwrap().mixer.get_bal_pair(is_output, moned_port_name).unwrap(),
-                        &scope,
-                        &log);
+                    moned_port,
+                    cfg.read()
+                        .unwrap()
+                        .mixer
+                        .get_vol(is_output, moned_port_name)
+                        .unwrap(),
+                    cfg.read()
+                        .unwrap()
+                        .mixer
+                        .get_bal_pair(is_output, moned_port_name)
+                        .unwrap(),
+                    &scope,
+                    &log,
+                );
             }
 
-            return j::JackControl::Continue;
+            return j::Control::Continue;
         })));
     }
 
@@ -291,9 +331,9 @@ impl Patchbay {
             loop {
                 let (mut stream, command): (TcpStream, server::Command) = r_cmd.recv().unwrap();
                 let get_ptype = |pt: &String| match &**pt {
-                                    "input"|"in"|"i" => false,
-                                    "output"|"out"|"o"|_ => true, // TODO: Handle bad args to server commands
-                                };
+                    "input" | "in" | "i" => false,
+                    "output" | "out" | "o" | _ => true, // TODO: Handle bad args to server commands
+                };
 
                 match command.cmd.as_str() {
                     "con" | "dis" | "tog" => {
@@ -306,19 +346,35 @@ impl Patchbay {
                             "tog" | _ => !cfg.read().unwrap().mixer.is_connected(&oname, &iname),
                         };
 
-
-
                         // Perform the (dis)connection
-                        cfg.write().unwrap().mixer.connect(connecting, &oname, &iname).expect("(dis)connecting ports");
+                        cfg.write()
+                            .unwrap()
+                            .mixer
+                            .connect(connecting, &oname, &iname)
+                            .expect("(dis)connecting ports");
 
-                        if cfg.read().unwrap().mixer.port_exists(true, &oname.to_string()) {
+                        if cfg
+                            .read()
+                            .unwrap()
+                            .mixer
+                            .port_exists(true, &oname.to_string())
+                        {
                             cfg.read().unwrap().mixer.write_info_response(
-                                true, &oname.to_string(), &mut stream, &log
-                                );
+                                true,
+                                &oname.to_string(),
+                                &mut stream,
+                                &log,
+                            );
                         } else {
-                            server::write_response(&log, &server::Response {
-                                ret: 2, msg: "Port not found!", obj: Value::Null
-                            }, &mut stream);
+                            server::write_response(
+                                &log,
+                                &server::Response {
+                                    ret: 2,
+                                    msg: "Port not found!",
+                                    obj: Value::Null,
+                                },
+                                &mut stream,
+                            );
                         }
                         drop(stream);
 
@@ -328,17 +384,15 @@ impl Patchbay {
                         //     msg = format!("{}\n- {}", msg, i);
                         // }
 
-
                         // let _ = stream.write(msg.as_bytes());
                         // let _ = stream.write(b"\n");
                         // let _ = stream.flush().log_err(&log);
                         // info!(log, "{}", msg);
-
                     }
                     "get" => {
                         // get all i/os
                         match command.opts[0].as_str() {
-                            "ports"|"channels" => {
+                            "ports" | "channels" => {
                                 let cfg = cfg.read().unwrap();
                                 // let ref names: Vec<&String> = match is_output {
                                 //     true => &cfg.mixer.outputs,
@@ -356,14 +410,25 @@ impl Patchbay {
                                     outputs.push(cfg.mixer.get_port_info(true, oname).unwrap());
                                 }
 
-                                server::write_response(&log, &server::Response {
-                                    ret: 0, msg: "channels", obj: json!({ "inputs": inputs, "outputs": outputs, })
-                                }, &mut stream);
+                                server::write_response(
+                                    &log,
+                                    &server::Response {
+                                        ret: 0,
+                                        msg: "channels",
+                                        obj: json!({ "inputs": inputs, "outputs": outputs, }),
+                                    },
+                                    &mut stream,
+                                );
                                 drop(stream);
                             }
-                            "monitor"|"mon" => {
+                            "monitor" | "mon" => {
                                 let cfg = cfg.read().unwrap();
-                                cfg.mixer.write_info_response(!cfg.mixer.monitor.is_input, &cfg.mixer.monitor.channel, &mut stream, &log);
+                                cfg.mixer.write_info_response(
+                                    !cfg.mixer.monitor.is_input,
+                                    &cfg.mixer.monitor.channel,
+                                    &mut stream,
+                                    &log,
+                                );
                                 drop(stream);
                             }
                             _ => {
@@ -371,14 +436,28 @@ impl Patchbay {
                                 let is_output = get_ptype(&ptype);
                                 let p_name = command.opts[1].clone();
 
-                                if cfg.read().unwrap().mixer.port_exists(is_output, &p_name.to_string()) {
+                                if cfg
+                                    .read()
+                                    .unwrap()
+                                    .mixer
+                                    .port_exists(is_output, &p_name.to_string())
+                                {
                                     cfg.read().unwrap().mixer.write_info_response(
-                                        is_output, &p_name.to_string(), &mut stream, &log
-                                        );
+                                        is_output,
+                                        &p_name.to_string(),
+                                        &mut stream,
+                                        &log,
+                                    );
                                 } else {
-                                    server::write_response(&log, &server::Response {
-                                        ret: 2, msg: "Port not found!", obj: Value::Null
-                                    }, &mut stream);
+                                    server::write_response(
+                                        &log,
+                                        &server::Response {
+                                            ret: 2,
+                                            msg: "Port not found!",
+                                            obj: Value::Null,
+                                        },
+                                        &mut stream,
+                                    );
                                 }
                                 drop(stream);
                             }
@@ -429,7 +508,6 @@ impl Patchbay {
                         //             Err(_) => { msg = "Error: port not found!".to_string() },
                         //         }
 
-
                         //         let _ = stream.write(msg.as_bytes());
                         //         let _ = stream.write(b"\n");
                         //         let _ = stream.flush().log_err(&log);
@@ -437,31 +515,46 @@ impl Patchbay {
                         //     }
                         //     _ => {}
                         // }
-
                     }
                     "mon" => {
                         let what = command.opts[0].clone();
                         match &*what {
-                            "volume"|"vol"|"v"
-                            |"connections"|"cons"|"con"|"c"
-                            |"balance"|"bal"|"b"=> {
+                            "volume" | "vol" | "v" | "connections" | "cons" | "con" | "c"
+                            | "balance" | "bal" | "b" => {
                                 let ptype = command.opts[1].clone();
                                 let is_output = get_ptype(&ptype);
                                 let p_name = command.opts[2].clone();
                                 let h_name = match &*what {
-                                    "volume"|"vol"|"v" => {
-                                        if is_output { "output_vol" } else { "input_vol" }
-                                    },
-                                    "connections"|"cons"|"con"|"c" => {
-                                        if is_output { "output_con" } else { "input_con" }
-                                    },
-                                    "balance"|"bal"|"b"|_ => {
-                                        if is_output { "output_bal" } else { "input_bal" }
-                                    },
+                                    "volume" | "vol" | "v" => {
+                                        if is_output {
+                                            "output_vol"
+                                        } else {
+                                            "input_vol"
+                                        }
+                                    }
+                                    "connections" | "cons" | "con" | "c" => {
+                                        if is_output {
+                                            "output_con"
+                                        } else {
+                                            "input_con"
+                                        }
+                                    }
+                                    "balance" | "bal" | "b" | _ => {
+                                        if is_output {
+                                            "output_bal"
+                                        } else {
+                                            "input_bal"
+                                        }
+                                    }
                                 }.to_owned();
 
                                 info!(log, "Hooking {} monitor", h_name);
-                                cfg.write().unwrap().mixer.hook(h_name, p_name, stream, log.clone());
+                                cfg.write().unwrap().mixer.hook(
+                                    h_name,
+                                    p_name,
+                                    stream,
+                                    log.clone(),
+                                );
                             }
                             _ => {}
                         }
@@ -469,27 +562,39 @@ impl Patchbay {
                     "set" => {
                         let what = command.opts[0].clone();
                         match &*what {
-                            "volule"|"vol"|"v"
-                            |"balance"|"bal"|"b" => {
+                            "volule" | "vol" | "v" | "balance" | "bal" | "b" => {
                                 let ptype = command.opts[1].clone();
                                 let is_output = get_ptype(&ptype);
 
                                 let p_name = command.opts[2].clone();
 
-                                let val = if (command.opts[3].chars().nth(0).unwrap() == '+' ||
-                                              command.opts[3].chars().nth(0).unwrap() == '-')
-                                            &&
-                                            match &*what { "volume"|"vol"|"v" => true, _ => false } {
-
-                                    cfg.read().unwrap().mixer.get_vol(is_output, &p_name.clone()).unwrap()*100f32
+                                let val = if (command.opts[3].chars().nth(0).unwrap() == '+'
+                                    || command.opts[3].chars().nth(0).unwrap() == '-')
+                                    && match &*what {
+                                        "volume" | "vol" | "v" => true,
+                                        _ => false,
+                                    } {
+                                    cfg.read()
+                                        .unwrap()
+                                        .mixer
+                                        .get_vol(is_output, &p_name.clone())
+                                        .unwrap()
+                                        * 100f32
                                         + command.opts[3].clone().parse::<f32>().unwrap()
-
                                 } else {
                                     command.opts[3].clone().parse().unwrap()
                                 };
                                 let ret = match &*what {
-                                    "volule"|"vol"|"v" => cfg.write().unwrap().mixer.set_vol(is_output, &p_name.clone(), val),
-                                    "balance"|"bal"|"b"|_ => cfg.write().unwrap().mixer.set_bal(is_output, &p_name.clone(), val),
+                                    "volule" | "vol" | "v" => cfg.write().unwrap().mixer.set_vol(
+                                        is_output,
+                                        &p_name.clone(),
+                                        val,
+                                    ),
+                                    "balance" | "bal" | "b" | _ => cfg
+                                        .write()
+                                        .unwrap()
+                                        .mixer
+                                        .set_bal(is_output, &p_name.clone(), val),
                                 };
                                 // let vol = cfg.read().unwrap().mixer.get_vol(is_output, &p_name);
 
@@ -497,15 +602,24 @@ impl Patchbay {
                                 match ret {
                                     Ok(_) => {
                                         cfg.read().unwrap().mixer.write_info_response(
-                                            is_output, &p_name.to_string(), &mut stream, &log
-                                            );
-                                    },
+                                            is_output,
+                                            &p_name.to_string(),
+                                            &mut stream,
+                                            &log,
+                                        );
+                                    }
                                     Err(_) => {
-                                        server::write_response(&log, &server::Response {
-                                            ret: 2, msg: "Port not found!", obj: Value::Null
-                                        }, &mut stream);
+                                        server::write_response(
+                                            &log,
+                                            &server::Response {
+                                                ret: 2,
+                                                msg: "Port not found!",
+                                                obj: Value::Null,
+                                            },
+                                            &mut stream,
+                                        );
                                         // msg = "Error: port not found!".to_string()
-                                    },
+                                    }
                                 }
                                 drop(stream);
                                 // let msg = format!("{:?}", vol);
@@ -515,7 +629,7 @@ impl Patchbay {
                                 // let _ = stream.flush().log_err(&log);
                                 // info!(log, "{}", msg);
                             }
-                            "monitor"|"mon"|"m" => {
+                            "monitor" | "mon" | "m" => {
                                 let ptype = command.opts[1].clone();
                                 let is_output = get_ptype(&ptype);
 
@@ -524,20 +638,28 @@ impl Patchbay {
                                 match res {
                                     Ok(_) => {
                                         cfg.read().unwrap().mixer.write_info_response(
-                                            is_output, &p_name.to_string(), &mut stream, &log
-                                            );
-                                    },
+                                            is_output,
+                                            &p_name.to_string(),
+                                            &mut stream,
+                                            &log,
+                                        );
+                                    }
                                     Err(_) => {
-                                        server::write_response(&log, &server::Response {
-                                            ret: 2, msg: "Port not found!", obj: Value::Null
-                                        }, &mut stream);
-                                    },
+                                        server::write_response(
+                                            &log,
+                                            &server::Response {
+                                                ret: 2,
+                                                msg: "Port not found!",
+                                                obj: Value::Null,
+                                            },
+                                            &mut stream,
+                                        );
+                                    }
                                 }
                                 drop(stream);
                             }
                             _ => {}
                         }
-
                     }
                     /*
                     "mkp" => {
@@ -549,8 +671,13 @@ impl Patchbay {
                     _ => {
                         server::write_response(
                             &log,
-                            &server::Response { ret: 1, msg: "Bad command!", obj: Value::Null, },
-                            &mut stream);
+                            &server::Response {
+                                ret: 1,
+                                msg: "Bad command!",
+                                obj: Value::Null,
+                            },
+                            &mut stream,
+                        );
                         drop(stream);
                         // let msg = format!("Bad command: `{}`", command.cmd);
                         // let _ = stream.write(msg.as_bytes());
@@ -562,5 +689,4 @@ impl Patchbay {
             }
         }));
     }
-
 }

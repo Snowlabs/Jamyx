@@ -1,11 +1,11 @@
-extern crate slog;
 extern crate serde;
 extern crate serde_json;
+extern crate slog;
 
-use std::sync::mpsc::{Sender};
-use std::net::{TcpListener, TcpStream};
-use std::thread;
 use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::mpsc::Sender;
+use std::thread;
 
 use std::error::Error;
 use utils::LogError;
@@ -39,17 +39,24 @@ pub struct CmdSender {
     all: Sender<(TcpStream, Command)>,
 }
 impl CmdSender {
-    pub fn new(myx: Sender<(TcpStream, Command)>,
-               con: Sender<(TcpStream, Command)>,
-               all: Sender<(TcpStream, Command)>) -> Self {
-
-        CmdSender { myx, con, all, }
+    pub fn new(
+        myx: Sender<(TcpStream, Command)>,
+        con: Sender<(TcpStream, Command)>,
+        all: Sender<(TcpStream, Command)>,
+    ) -> Self {
+        CmdSender { myx, con, all }
     }
     pub fn send(&self, s: TcpStream, c: Command) {
         match c.target.as_str() {
-            "myx" => { self.myx.send((s, c)).unwrap(); }
-            "con" => { self.con.send((s, c)).unwrap(); }
-            "all" => { self.all.send((s, c)).unwrap(); }
+            "myx" => {
+                self.myx.send((s, c)).unwrap();
+            }
+            "con" => {
+                self.con.send((s, c)).unwrap();
+            }
+            "all" => {
+                self.all.send((s, c)).unwrap();
+            }
             _ => {}
         }
     }
@@ -63,8 +70,6 @@ impl Clone for CmdSender {
         }
     }
 }
-
-
 
 fn handle_client(log: slog::Logger, mut stream: TcpStream, sender: CmdSender) {
     let peer_addr = stream.peer_addr().unwrap();
@@ -85,17 +90,21 @@ fn handle_client(log: slog::Logger, mut stream: TcpStream, sender: CmdSender) {
             Ok(cmd) => {
                 sender.send(stream.try_clone().unwrap(), cmd);
                 return;
-
             }
             Err(e) => {
-                error!(log, "{}: {:?} ({} : {})", e.description(), e.classify(), e.line(), e.column());
+                error!(
+                    log,
+                    "{}: {:?} ({} : {})",
+                    e.description(),
+                    e.classify(),
+                    e.line(),
+                    e.column()
+                );
                 let _ = stream.write(e.description().as_bytes());
                 return;
             }
         }
-
     }
-
 }
 
 pub fn start(log: slog::Logger, sender: CmdSender) {
@@ -106,15 +115,17 @@ pub fn start(log: slog::Logger, sender: CmdSender) {
         for stream in listener.incoming() {
             let log = log.clone();
             let sender = sender.clone();
-            stream.log_err(&log).map(move |s| {
-                thread::spawn(move || {
-                    handle_client(
-                        log.new(o!("peer address" => format!("{}", s.peer_addr().unwrap()))),
-                        s,
-                        sender);
-                });
-            }).consume();
+            stream
+                .log_err(&log)
+                .map(move |s| {
+                    thread::spawn(move || {
+                        handle_client(
+                            log.new(o!("peer address" => format!("{}", s.peer_addr().unwrap()))),
+                            s,
+                            sender,
+                        );
+                    });
+                }).consume();
         }
     });
-
 }

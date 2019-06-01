@@ -14,10 +14,16 @@ pub trait LogError<T> {
 
 impl<T, E: std::fmt::Debug> LogError<T> for Result<T, E> {
     fn log_err(self, logger: &slog::Logger) -> Self {
-        return self.map_err(|expl| { error!(logger, "{:?}", expl); expl });
+        return self.map_err(|expl| {
+            error!(logger, "{:?}", expl);
+            expl
+        });
     }
     fn warn_err(self, logger: &slog::Logger) -> Self {
-        return self.map_err(|expl| { warn!(logger, "{:?}", expl); expl });
+        return self.map_err(|expl| {
+            warn!(logger, "{:?}", expl);
+            expl
+        });
     }
 
     fn log_expect(self, logger: &slog::Logger) -> T {
@@ -26,7 +32,7 @@ impl<T, E: std::fmt::Debug> LogError<T> for Result<T, E> {
             Err(e) => {
                 crit!(logger, "{:?}", e);
                 panic!();
-            },
+            }
         }
     }
 
@@ -41,7 +47,9 @@ pub trait Connections {
 impl Connections for HashMap<String, HashSet<String>> {
     fn connect(&mut self, of: bool, oname: &str, iname: &str) {
         if of {
-            self.entry(oname.to_string()).or_insert(HashSet::new()).insert(iname.to_string());
+            self.entry(oname.to_string())
+                .or_insert(HashSet::new())
+                .insert(iname.to_string());
         } else {
             // self.get(iname).as_mut().map()
             let mut erase = false;
@@ -49,8 +57,8 @@ impl Connections for HashMap<String, HashSet<String>> {
                 Some(os) => {
                     os.remove(iname);
                     erase = os.is_empty();
-                },
-                None => {},
+                }
+                None => {}
             }
             if erase {
                 self.remove(oname);

@@ -6,13 +6,11 @@ authors = ["Javier Pollak <javi.po.123@gmail.com>"]
 [dependencies]
 libc = "0.2"
 clap = "2.26.2"
-jack = { git = "https://github.com/rustaudio/rust-jack.git" }
-# jack = { git = "https://github.com/Javyre/rust-jack.git" }
-# jack = { path = "../Rust-jack" }
-slog = "2.0.12"
-slog-term = "2.2.0"
-slog-async = "2.1.0"
-sloggers = "0.2.1"
+jack = "0.6"
+slog = "2.4.1"
+slog-term = "2.4.0"
+slog-async = "2.3.0"
+sloggers = "0.3.1"
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
