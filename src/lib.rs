@@ -353,7 +353,7 @@ pub struct Client {
 
 impl Client {
     pub fn new(name: &str, logger: slog::Logger) -> Client {
-        let not_logger = logger.new(o!());
+        let noti_logger = logger.new(o!());
         let proc_logger = logger.new(o!());
         let hooks = Arc::new(Mutex::new(Vec::new()));
         Client {
@@ -361,7 +361,7 @@ impl Client {
             name: name.to_string(),
             logger,
             notifications_handler: Arc::new(Mutex::new(Some(Notifications::new(
-                not_logger,
+                noti_logger,
                 hooks.clone(),
             )))),
             process_handler: Arc::new(Mutex::new(Some(Process::new(proc_logger, hooks.clone())))),
@@ -388,8 +388,7 @@ impl Client {
         let proc_han = self.process_handler.clone();
         let hooks = self.hooks.clone();
         self.notifications_handler
-            .lock()
-            .unwrap()
+            .lock()?
             .as_mut()
             .unwrap()
             .hook(CB::shutdown(Box::new(move |cs, s| {

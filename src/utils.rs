@@ -8,8 +8,6 @@ pub trait LogError<T> {
     fn warn_err(self, &slog::Logger) -> Self;
 
     fn log_expect(self, &slog::Logger) -> T;
-
-    fn consume(self);
 }
 
 impl<T, E: std::fmt::Debug> LogError<T> for Result<T, E> {
@@ -35,8 +33,6 @@ impl<T, E: std::fmt::Debug> LogError<T> for Result<T, E> {
             }
         }
     }
-
-    fn consume(self) {}
 }
 
 pub trait Connections {

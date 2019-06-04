@@ -85,7 +85,9 @@ fn handle_client(log: slog::Logger, mut stream: TcpStream, sender: CmdSender) {
         let ibuff = String::from_utf8_lossy(ibuff.as_slice());
 
         debug!(log, "RECVD: {}", ibuff);
-        let cmd: Result<Command, serde_json::error::Error> = serde_json::from_str(&ibuff);
+        let cmd: Result<Command, serde_json::error::Error> = 
+            serde_json::from_str(&ibuff);
+
         match cmd {
             Ok(cmd) => {
                 sender.send(stream.try_clone().unwrap(), cmd);
@@ -115,7 +117,7 @@ pub fn start(log: slog::Logger, sender: CmdSender) {
         for stream in listener.incoming() {
             let log = log.clone();
             let sender = sender.clone();
-            stream
+            let _ = stream
                 .log_err(&log)
                 .map(move |s| {
                     thread::spawn(move || {
@@ -125,7 +127,7 @@ pub fn start(log: slog::Logger, sender: CmdSender) {
                             sender,
                         );
                     });
-                }).consume();
+                });
         }
     });
 }

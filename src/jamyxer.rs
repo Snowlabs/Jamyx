@@ -189,7 +189,7 @@ pub struct Patchbay {
 
     monitor_port: AM<Option<Port>>,
 
-    pub t_cmd: Option<Sender<(TcpStream, server::Command)>>,
+    t_cmd: Option<Sender<(TcpStream, server::Command)>>,
     cmd_thread: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -688,5 +688,9 @@ impl Patchbay {
                 }
             }
         }));
+    }
+
+    pub fn get_cmd_sender(&self) -> Option<&Sender<(TcpStream, server::Command)>> {
+        return self.t_cmd.as_ref();
     }
 }

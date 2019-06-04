@@ -88,11 +88,15 @@ fn main() {
     })));
 
     // setup jacon
-    let mut jacon = jacon::ConnectionKit::new(log.clone(), jclient.jclient.clone(), config.clone());
-    jacon.init(&mut jclient);
+    let mut jacon = jacon::ConnectionKit::new(
+        log.clone(), jclient.jclient.clone(), config.clone());
+
+    jacon.init(&mut jclient).expect("initializing jacon");
 
     // setup jamyxer
-    let mut jamyxer = jamyxer::Patchbay::new(log.clone(), jclient.jclient.clone(), config.clone());
+    let mut jamyxer = jamyxer::Patchbay::new(
+        log.clone(), jclient.jclient.clone(), config.clone());
+
     jamyxer.init(&mut jclient);
 
     // =========== START ===========
@@ -103,15 +107,15 @@ fn main() {
     jclient.start_reconnection_loop().unwrap();
 
     debug!(log, "Starting Jacon...");
-    jacon.start();
+    jacon.start().expect("starting jacon");
 
     debug!(log, "Starting Jamyxer...");
     jamyxer.start();
 
     let sender = server::CmdSender::new(
-        jamyxer.t_cmd.as_ref().unwrap().clone(),
-        jacon.t_cmd.as_ref().unwrap().clone(),
-        jamyxer.t_cmd.as_ref().unwrap().clone(),
+        jamyxer.get_cmd_sender().expect("getting jamyxer cmd sender").clone(),
+        jacon.  get_cmd_sender().expect("getting jacon cmd sender").clone(),
+        jamyxer.get_cmd_sender().expect("getting jamyxer cmd sender").clone(),
     );
     debug!(log, "Starting server...");
     server::start(log.clone(), sender);
